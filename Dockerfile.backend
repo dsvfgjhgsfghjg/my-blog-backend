@@ -1,0 +1,22 @@
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+# 替换 Alpine 源为清华源加速
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories
+
+# 安装 curl 用于健康检查
+RUN apk add --no-cache curl
+
+# 复制 Gradle 构建的 Boot JAR 文件（排除 plain jar）
+COPY build/libs/*-SNAPSHOT.jar app.jar
+
+# 暴露端口
+EXPOSE 8080
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# 启动应用
+ENTRYPOINT ["java", "-jar", "app.jar"]

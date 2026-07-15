@@ -1,0 +1,30 @@
+package com.leo.myblog.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+
+/**
+ * Jackson配置
+ * 将所有Long类型序列化为String，避免JavaScript精度丢失
+ */
+@Configuration
+public class JacksonConfig {
+    
+    @Bean
+    public ObjectMapper objectMapper(Jackson2ObjectMapperBuilder builder) {
+        ObjectMapper objectMapper = builder.createXmlMapper(false).build();
+        
+        // 创建模块，注册Long转String的序列化器
+        SimpleModule simpleModule = new SimpleModule();
+        simpleModule.addSerializer(Long.class, ToStringSerializer.instance);
+        simpleModule.addSerializer(Long.TYPE, ToStringSerializer.instance);
+        
+        objectMapper.registerModule(simpleModule);
+        
+        return objectMapper;
+    }
+}

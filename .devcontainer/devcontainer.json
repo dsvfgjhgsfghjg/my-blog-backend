@@ -1,0 +1,78 @@
+services:
+# 1. PostgreSQL 18
+postgres:
+image: postgres:18  # 注意：如果当前官方还没出18版镜像，请改成 postgres:16 或 postgres:latest
+container_name: my-postgres
+environment:
+POSTGRES_USER: Leoxiaoblog
+POSTGRES_PASSWORD: your-password-here  # 请修改为你自己的密码
+POSTGRES_DB: myblog
+ports:
+- "5432:5432"
+volumes:
+- ./db-data:/var/lib/postgresql/data
+restart: always
+
+# 2. Redis 7 Alpine
+redis:
+image: redis:7-alpine
+container_name: my-redis
+ports:
+- "6379:6379"
+volumes:
+- ./redis-data:/data
+restart: always
+
+# 3. MinIO
+minio:
+image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+container_name: my-minio
+environment:
+MINIO_ROOT_USER: Leoxiao
+MINIO_ROOT_PASSWORD: your-password-here # 请修改为你自己的密码
+ports:
+- "9000:9000"  # API 端口
+- "9001:9001"  # Web 管理界面端口
+volumes:
+- ./minio-data:/data
+command: server /data --console-address ":9001"
+restart: always
+
+# 4. Spring Boot 后端 (Java 21)
+backend:
+image: eclipse-temurin:21-jre-alpine
+container_name: my-backend
+working_dir: /app
+volumes:
+- ./backend:/app  # 把你的 jar 包放在宿主机的 ~/my-app/backend/ 下
+command: java -jar your-springboot-app.jar  # 替换为你的 jar 包文件名
+ports:
+- "8080:8080"
+environment:
+# 这里告诉 Spring Boot 连接容器内的数据库和 Redis，使用 Docker 内部网络的服务名
+SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/mydb
+SPRING_DATASOURCE_USERNAME: myuser
+SPRING_DATASOURCE_PASSWORD: mypgpassword
+SPRING_DATA_REDIS_HOST: redis
+# MinIO 配置
+MINIO_ENDPOINT: http://minio:9000
+MINIO_ACCESS_KEY: admin
+MINIO_SECRET_KEY: admin123456
+depends_on:
+- postgres
+- redis
+- minio
+restart: always
+
+# 5. Apache 前端 (Vue)
+frontend:
+image: httpd:2.4-alpine
+container_name: my-frontend
+ports:
+- "80:80"  # 映射宿主机的 80 端口
+volumes:
+- ./frontend/dist/:/usr/local/apache2/htdocs/  # 把 Vue 打包后的 dist 文件夹内容放这里
+- ./frontend/apache/httpd.conf:/usr/local/apache2/conf/httpd.conf  # 挂载自定义配置
+depends_on:
+- backend
+restart: always

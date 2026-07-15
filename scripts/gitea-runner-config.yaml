@@ -1,0 +1,28 @@
+log:
+  level: info
+
+runner:
+  name: myblog-native-runner
+  file: .runner
+  capacity: 1
+  envs:
+    DOCKER_HOST: unix:///var/run/docker.sock
+  labels:
+    - self-hosted
+    - ubuntu-latest:docker://node:20-bullseye
+    - ubuntu-22.04:docker://node:20-bullseye
+    - ubuntu-24.04:docker://node:20-bullseye
+
+cache:
+  enabled: true
+  dir: cache
+
+container:
+  network: gitea-network
+  privileged: false
+  dns:
+    - 114.114.114.114
+    - 8.8.8.8
+
+host:
+  network_mode: ""

@@ -1,0 +1,148 @@
+# ============================================
+# Build and Output Directories
+# ============================================
+build/
+dist/
+out/
+bin/
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# ============================================
+# IDE Configuration Files
+# ============================================
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+.run/
+
+### Eclipse/STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+# ============================================
+# Environment and Secrets
+# ============================================
+.env
+.env.local
+.env.*.local
+apifoxtoken.txt
+*.pem
+*.key
+*.secret
+
+# Config directory (contains sensitive configs)
+/config/
+!/config/.env.example
+
+# ============================================
+# Docker and Container Data
+# ============================================
+db-data/
+redis-data/
+minio-data/
+gitea/
+gitea-postgres/
+*.tar
+*.tar.gz
+
+# ============================================
+# Temporary and Cache Files
+# ============================================
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================
+# Development Tools
+# ============================================
+.sdkmanrc
+.gitignore.docker
+config.md
+HELP.md
+
+# ============================================
+# Documentation (organized in docs/ directory)
+# ============================================
+# Ignore root-level markdown files that are duplicates
+API_USER.md
+QUICK_START.md
+TODO.md
+pgsql.sql
+疑惑.md
+
+# Ignore all API documentation files
+docs/api/*.md
+
+# ============================================
+# Deployment Packages
+# ============================================
+deploy-package/
+frontend/
+
+# ============================================
+# Install Lock File
+# ============================================
+.myblog_installed
+
+# ============================================
+# Docker Compose variants (keep only what's needed)
+# ============================================
+docker-compose.yml.old
+docker-compose.new.yml
+
+# Docker Compose files are now in config/ directory
+# Symlinks in root will be ignored automatically
+
+# ============================================
+# Gitea CI/CD (if using external Gitea)
+# ============================================
+.gitea/
+!.gitea/workflows/
+
+# ============================================
+# DevContainer (optional, uncomment if not needed)
+# ============================================
+# .devcontainer/
+captcha-images/
+
+# ============================================
+# Additional sensitive/runtime files
+# ============================================
+secrets_config*.txt
+.runner
+*.runner
+runner.*
+cache/
+logs/
+*.pid
+*.gz
+# 或者使用 RSA (key files with special names)
+\# 或者使用 RSA
+\# 或者使用 RSA.pub
+config.yaml

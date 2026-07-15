@@ -1,0 +1,78 @@
+# ============================================
+# 打包时排除的文件和目录
+# 用于创建干净的部署包
+# ============================================
+
+# Git 相关
+.git/
+.gitignore
+.gitattributes
+
+# IDE 配置
+.idea/
+.vscode/
+.run/
+*.iml
+*.iws
+*.ipr
+
+# Gradle 构建产物
+.gradle/
+build/
+dist/
+out/
+bin/
+
+# 日志文件
+*.log
+logs/
+runner.log
+runner.pid
+
+# 缓存和临时文件
+cache/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 敏感配置文件（保留示例文件）
+config/.env
+config/secrets_config_*.txt
+!.env.example
+!config/.env.example
+
+# Docker 数据卷
+db-data/
+redis-data/
+minio-data/
+gitea/
+gitea-postgres/
+
+# 开发工具和文档
+.devcontainer/
+.gitea/
+docs/
+scripts/
+sql/
+captcha-images/
+captcha-images.tar.gz
+
+# 测试和调试文件
+test/
+tests/
+*.test.*
+*.spec.*
+
+# Gitea Runner
+gitea-runner-*
+
+# 其他不需要的文件
+PROJECT_ORGANIZATION.md
+README.md.old
+*.md.old
+docker-compose.yml.old
+docker-compose.new.yml

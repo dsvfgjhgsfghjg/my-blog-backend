@@ -1,0 +1,83 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.5'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.leo'
+version = '0.0.1-SNAPSHOT'
+description = 'myblog'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    // 阿里云 Maven 镜像（加速下载）
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    maven { url 'https://maven.aliyun.com/repository/spring' }
+    maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // MyBatis-Plus (替换JPA)
+    implementation 'com.baomidou:mybatis-plus-spring-boot3-starter:3.5.5'
+    
+    // PostgreSQL Driver
+    runtimeOnly 'org.postgresql:postgresql'
+    
+    // Redis
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    
+    // MinIO
+    implementation 'io.minio:minio:8.5.7'
+    
+    // Flyway 数据库迁移
+    implementation 'org.flywaydb:flyway-core'
+    
+    // JWT (用户认证)
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+    
+    // Spring Security (密码加密BCrypt)
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    
+    // AOP (管理员权限切面)
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    
+    // Validation
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    
+    // XML Processing (SVG安全清洗)
+    implementation 'org.jsoup:jsoup:1.17.2'
+    implementation 'xerces:xercesImpl:2.12.2'
+    
+    // TOTP 双因素认证
+    implementation 'com.warrenstrange:googleauth:1.5.0'
+    
+    // WebSocket (App 认证通信)
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
+    
+    // Bouncy Castle (密码学库，支持 SM4 等国密算法)
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+    
+    // Lombok (简化代码)
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

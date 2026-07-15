@@ -1,0 +1,19 @@
+https://mirrors.aliyun.com/gradle/distributions/v8.14.4/?spm=a2c6h.25603864.0.0.5ecf61a6wSpa7h
+
+Index of /gradle/distributions/v8.14.4/
+File Name	File Size	Date
+Parent directory/	-	-
+gradle-8.14.4-all.zip	214.2 MB	2026-01-24 00:43
+gradle-8.14.4-all.zip.asc	801.0 B	2026-01-24 00:42
+gradle-8.14.4-bin.zip	131.0 MB	2026-01-24 00:42
+gradle-8.14.4-bin.zip.asc	801.0 B	2026-01-24 00:42
+gradle-8.14.4-docs.zip	76.5 MB	2026-01-24 00:42
+gradle-8.14.4-docs.zip.asc	801.0 B	2026-01-24 00:42
+gradle-8.14.4-src.zip	60.0 MB	2026-01-24 00:42
+gradle-8.14.4-src.zip.asc	801.0 B	2026-01-24 00:42
+gradle-8.14.4-wrapper.jar.asc	801.0 B	2026-01-24 00:42
+gradle-distributions-SourceCode-8.14.4.tar.gz	4.2 KB	2026-11-13 19:40
+gradle-distributions-SourceCode-8.14.4.zip	4.5 KB	2026-11-13 19:40
+
+
+https://mirrors.aliyun.com/gradle/distributions/v8.14.4/gradle-8.14.4-bin.zip
