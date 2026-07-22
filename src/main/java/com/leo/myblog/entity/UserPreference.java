@@ -32,6 +32,13 @@ public class UserPreference {
     private String particleMode;
     
     /**
+     * 默认登录方式
+     * PASSWORD - 密码登录
+     * AUTHENTICATOR_APP - 通过 App 挑战推送登录
+     */
+    private String defaultLoginMethod;
+    
+    /**
      * 创建时间
      */
     private LocalDateTime createdAt;

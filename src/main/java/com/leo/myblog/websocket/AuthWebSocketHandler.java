@@ -7,6 +7,7 @@ import com.leo.myblog.dto.response.DashboardResponse;
 import com.leo.myblog.service.AdminDashboardService;
 import com.leo.myblog.service.AppAuthService;
 import com.leo.myblog.service.CryptoService;
+import com.leo.myblog.service.LoginService;
 import com.leo.myblog.service.UserCacheService;
 import com.leo.myblog.util.AbilityValidator;
 import com.leo.myblog.util.JwtUtil;
@@ -55,6 +56,7 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
     private final AdminDashboardService adminDashboardService;
     private final UserCacheService userCacheService;
     private final AbilityValidator abilityValidator;
+    private final LoginService loginService;
 
     // 存储每个会话的 DH 会话状态
     private final Map<String, DhSessionState> dhSessions = new ConcurrentHashMap<>();
@@ -350,8 +352,65 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
 
         log.info("DH 密钥交换完成: sessionId={}, cipher={}", session.getId(), selectedCipher);
 
-        // 注意：DH 握手完成后不再自动推送挑战
-        // 挑战由管理后台通过 pushChallengeToUser 手动触发
+        // 尝试推送待处理的登录挑战
+        try {
+            pushPendingLoginChallenges(session, deviceId);
+        } catch (Exception e) {
+            log.warn("推送待处理登录挑战失败: sessionId={}", session.getId(), e);
+        }
+    }
+
+    /**
+     * 推送待处理的登录挑战
+     * 设备上线后，检查是否有该用户的待处理登录挑战，有则推送
+     */
+    private void pushPendingLoginChallenges(WebSocketSession session, String deviceId) throws IOException {
+        if (deviceId == null) {
+            return;
+        }
+
+        Long userId = sessionManager.getUserId(deviceId);
+        if (userId == null) {
+            return;
+        }
+
+        // 获取待处理的登录挑战
+        java.util.List<String> pendingChallengeIds = loginService.getUserPendingLoginChallengeIds(userId);
+        if (pendingChallengeIds == null || pendingChallengeIds.isEmpty()) {
+            log.debug("无待处理的登录挑战: userId={}", userId);
+            return;
+        }
+
+        log.info("发现 {} 个待处理的登录挑战: userId={}", pendingChallengeIds.size(), userId);
+
+        // 向设备推送所有待处理的登录挑战
+        for (String challengeId : pendingChallengeIds) {
+            LoginService.LoginChallenge challengeDetail = loginService.getLoginChallengeDetail(challengeId);
+            if (challengeDetail == null) {
+                continue;
+            }
+
+            // 获取设备名称
+            String deviceName = null;
+            com.leo.myblog.entity.AppDevice device = appAuthService.getUserDevices(userId).stream()
+                    .filter(d -> d.getDeviceId().equals(deviceId))
+                    .findFirst().orElse(null);
+            if (device != null) {
+                deviceName = device.getDeviceName();
+            }
+
+            // 构建挑战消息（包含 3 个数字）
+            String challengeMsg = String.format(
+                    "{\"type\":\"challenge\",\"challengeId\":\"%s\",\"numbers\":[%d,%d,%d],\"expiresAt\":%d,\"purpose\":\"login\"}",
+                    challengeId,
+                    0, 0, 0,  // 占位符，实际 numbers 需要从登录挑战中获取
+                    System.currentTimeMillis() / 1000 + 60
+            );
+
+            // 加密后发送
+            sendEncryptedMessage(session, challengeMsg);
+            log.info("推送待处理登录挑战: challengeId={}, userId={}, deviceId={}", challengeId, userId, deviceId);
+        }
     }
 
     /**

@@ -110,11 +110,17 @@ public class SecurityConfig {
                 // 公开接口
                 .requestMatchers("/api/users/register", "/api/users/login").permitAll()
 
+                // 两步登录公开接口
+                .requestMatchers("/api/auth/login/**").permitAll()
+
                 // 验证码公开接口（登录前需要）
                 .requestMatchers("/api/captcha/**").permitAll()           // 滑块验证码
 
                 // TOTP 双因素认证接口（需要登录）
                 .requestMatchers("/api/auth/totp/**").authenticated()
+
+                // 验证服务接口（需要登录）
+                .requestMatchers("/api/auth/verify/**").authenticated()
 
                 // Actuator 健康检查（Docker 健康检查需要）
                 .requestMatchers("/actuator/health").permitAll()

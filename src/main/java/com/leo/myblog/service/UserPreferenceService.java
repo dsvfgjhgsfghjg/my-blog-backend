@@ -73,6 +73,53 @@ public class UserPreferenceService {
     }
     
     /**
+     * 获取用户偏好设置实体
+     */
+    public UserPreference getUserPreference(Long userId) {
+        LambdaQueryWrapper<UserPreference> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserPreference::getUserId, userId);
+        return userPreferenceMapper.selectOne(wrapper);
+    }
+    
+    /**
+     * 获取用户默认登录方式
+     */
+    public String getDefaultLoginMethod(Long userId) {
+        UserPreference preference = getUserPreference(userId);
+        if (preference != null && preference.getDefaultLoginMethod() != null) {
+            return preference.getDefaultLoginMethod();
+        }
+        return com.leo.myblog.enums.LoginMethod.PASSWORD.getValue();
+    }
+    
+    /**
+     * 设置用户默认登录方式
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void setDefaultLoginMethod(Long userId, String method) {
+        // 验证方法是否合法
+        com.leo.myblog.enums.LoginMethod.fromValue(method);
+        
+        LambdaQueryWrapper<UserPreference> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserPreference::getUserId, userId);
+        UserPreference existing = userPreferenceMapper.selectOne(wrapper);
+        
+        if (existing != null) {
+            existing.setDefaultLoginMethod(method);
+            existing.setUpdatedAt(java.time.LocalDateTime.now());
+            userPreferenceMapper.updateById(existing);
+        } else {
+            UserPreference preference = new UserPreference();
+            preference.setUserId(userId);
+            preference.setDefaultLoginMethod(method);
+            preference.setCreatedAt(java.time.LocalDateTime.now());
+            preference.setUpdatedAt(java.time.LocalDateTime.now());
+            userPreferenceMapper.insert(preference);
+        }
+        log.info("用户 {} 设置默认登录方式: {}", userId, method);
+    }
+    
+    /**
      * 设置用户粒子特效
      * 如果用户已有记录则更新，否则插入新记录
      * 

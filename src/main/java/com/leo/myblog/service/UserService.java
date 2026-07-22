@@ -673,7 +673,7 @@ public class UserService {
     /**
      * 更新用户登录信息
      */
-    private void updateLoginInfo(User user, String clientIp) {
+    public void updateLoginInfo(User user, String clientIp) {
         // 保存上次登录信息（在更新前）
         String lastLoginIp = user.getLastLoginIp();
         LocalDateTime lastLoginTime = user.getLastLoginTime();
