@@ -86,10 +86,10 @@ jobs:
         run: |
           # Find the boot JAR (not plain JAR)
           BOOT_JAR=$(ls build/libs/*-SNAPSHOT.jar | grep -v plain | head -n 1)
-          echo "Using JAR: $BOOT_JAR"
+          echo "Using JAR: $BOOT_JAR, REGISTRY: ${{ env.REGISTRY }}"
           docker build \
             -t myblog-backend:latest \
-            --build-arg JAR_FILE=$BOOT_JAR \
+            --build-arg BASE_IMAGE=${{ env.REGISTRY }}/library/eclipse-temurin:21-jre-alpine \
             -f Dockerfile.backend .
 
       - name: Debug paths and list migration files
