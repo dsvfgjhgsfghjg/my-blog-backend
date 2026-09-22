@@ -55,7 +55,17 @@ public class AndroidUaDetector {
     );
     
     private static final Pattern VIVO_MODEL_PATTERN = Pattern.compile(
-        "(vivo\\s*[A-Z0-9]+|V[0-9]{4}[A-Z]?)", 
+        "(vivo\\s*[A-Z0-9]+|V[0-9]{4}[A-Z]{0,2})",
+        Pattern.CASE_INSENSITIVE
+    );
+
+    private static final Pattern SAMSUNG_MODEL_PATTERN = Pattern.compile(
+        "(SM-[A-Z0-9]+)",
+        Pattern.CASE_INSENSITIVE
+    );
+
+    private static final Pattern ONEPLUS_MODEL_PATTERN = Pattern.compile(
+        "(ONEPLUS\\s*[A-Z0-9]+)",
         Pattern.CASE_INSENSITIVE
     );
     
@@ -70,8 +80,24 @@ public class AndroidUaDetector {
         BRAND_PATTERNS.put("MI ", "小米");
         BRAND_PATTERNS.put("MIX ", "小米");
         
+        // 荣耀系列
+        //
+        // ⚠️ 必须排在华为之前。荣耀设备的 UA 在 build 段会出现 "HUAWEI" 字样
+        //    （如 "COL-AL10 Build/HUAWEICOL-AL10"），而品牌判定是
+        //    LinkedHashMap 的插入顺序 + contains 子串匹配，先命中先返回。
+        //    若华为在前，泛化的 "HUAWEI" 会抢先命中，把荣耀误判成华为。
+        BRAND_PATTERNS.put("HONOR", "荣耀");
+        BRAND_PATTERNS.put("COL-", "荣耀");
+        BRAND_PATTERNS.put("JSN-", "荣耀");
+        BRAND_PATTERNS.put("PRA-", "荣耀");
+        BRAND_PATTERNS.put("BLN-", "荣耀");
+        BRAND_PATTERNS.put("YAL-", "荣耀");
+
         // 华为系列
-        BRAND_PATTERNS.put("HUAWEI", "华为");
+        //
+        // 具体机型代号在前，"HUAWEI" 这个泛化子串放到最后兜底：
+        // 它是子串匹配，出现在别处（如上面的荣耀 build 段）会误命中，
+        // 因此让机型代号先有机会判定。
         BRAND_PATTERNS.put("HWI-", "华为");
         BRAND_PATTERNS.put("ELE-", "华为");
         BRAND_PATTERNS.put("VOG-", "华为");
@@ -96,14 +122,7 @@ public class AndroidUaDetector {
         BRAND_PATTERNS.put("LON-", "华为");
         BRAND_PATTERNS.put("NXT-", "华为");
         BRAND_PATTERNS.put("PIC-", "华为");
-        
-        // 荣耀系列
-        BRAND_PATTERNS.put("HONOR", "荣耀");
-        BRAND_PATTERNS.put("COL-", "荣耀");
-        BRAND_PATTERNS.put("JSN-", "荣耀");
-        BRAND_PATTERNS.put("PRA-", "荣耀");
-        BRAND_PATTERNS.put("BLN-", "荣耀");
-        BRAND_PATTERNS.put("YAL-", "荣耀");
+        BRAND_PATTERNS.put("HUAWEI", "华为");
         
         // OPPO系列
         BRAND_PATTERNS.put("OPPO", "OPPO");
@@ -272,6 +291,12 @@ public class AndroidUaDetector {
                 return extractModelWithPattern(userAgent, OPPO_MODEL_PATTERN);
             case "vivo":
                 return extractModelWithPattern(userAgent, VIVO_MODEL_PATTERN);
+            case "三星":
+                // 三星型号以 SM- 开头，通用正则会把 "Android 10" 误当型号
+                return extractModelWithPattern(userAgent, SAMSUNG_MODEL_PATTERN);
+            case "一加":
+                // 一加型号以 ONEPLUS 开头，通用正则会误匹配 "Android 9"
+                return extractModelWithPattern(userAgent, ONEPLUS_MODEL_PATTERN);
             default:
                 // 通用型号提取
                 return extractGenericModel(userAgent);
