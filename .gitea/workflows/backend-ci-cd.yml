@@ -8,7 +8,9 @@ on:
 
 env:
   # 拉取用镜像加速（只读代理，不支持推送）
-  MIRROR: 04eh77udwizz5vqdbk.xuanyuan.run
+  # ⚠️ 另一台镜像 04eh77udwizz5vqdbk.xuanyuan.run 自 2026-09-22 起对
+  #    library/* 一律返回 401（连裸名拉取也失败），故改用下面这台。
+  MIRROR: 8vl5aon5dsr0lafr0i.xuanyuan.run
 
   # 推送目标：Gitea 内置容器仓库
   # 用回环地址而非公网 IP —— Docker 默认把 127.0.0.0/8 当不安全仓库放行（允许明文 HTTP），
