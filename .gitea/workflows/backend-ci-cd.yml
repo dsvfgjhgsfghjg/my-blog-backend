@@ -101,11 +101,15 @@ jobs:
 
       - name: Run tests
         env:
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:15432/myblog_test
+          # 用服务名而非 localhost：job 跑在 runner 容器里，localhost 是容器
+          # 自己的回环；上面 services 里的 postgres/redis 与 runner 同处
+          # gitea-network，按服务名解析。用 localhost + 映射端口会连到容器自身
+          # 而报 ConnectException。
+          SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/myblog_test
           SPRING_DATASOURCE_USERNAME: testuser
           SPRING_DATASOURCE_PASSWORD: testpass
-          SPRING_DATA_REDIS_HOST: localhost
-          SPRING_DATA_REDIS_PORT: 16379
+          SPRING_DATA_REDIS_HOST: redis
+          SPRING_DATA_REDIS_PORT: 6379
           # application.yml 中 minio.secret-key 的默认值是空串，而 MinIO 的
           # Credentials 要求 secret 至少 8 位、access key 至少 3 位，否则构造时直接抛
           # IllegalArgumentException → MinioConfig 建 Bean 失败 → Spring 上下文起不来
