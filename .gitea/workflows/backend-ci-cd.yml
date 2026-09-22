@@ -53,13 +53,31 @@ jobs:
           --health-retries 10
 
     steps:
-      - name: Configure Git mirror
-        run: |
-          # Use GitHub mirror for faster access in China
-          git config --global url."https://ghproxy.com/https://github.com".insteadOf "https://github.com"
-
+      # 不用 actions/checkout：它要求 runner 去 github.com 拉取该 action，
+      # 而本机访问 GitHub 时快时慢（实测 0.5s ~ 11.6s），一旦超过 act 的 10 秒
+      # 超时就整个 job 失败。仓库就在同机的 Gitea 上，直接从这里 clone 更稳。
+      #
+      # 顺带移除了原先指向 ghproxy.com 的 git 镜像重写配置 —— 该域名已不可达，
+      # 留着只会让任何指向 github.com 的 git 操作变慢或失败。
       - name: Checkout code
-        uses: https://github.com/actions/checkout@v4
+        env:
+          GIT_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          URL="http://oauth2:${GIT_TOKEN}@127.0.0.1:3000/leoxiao/backend.git"
+          cd "$GITHUB_WORKSPACE"
+          if [ ! -d .git ]; then
+            git init --quiet .
+            git remote add origin "$URL"
+          else
+            git remote set-url origin "$URL"
+          fi
+          # 服务端已开启 uploadpack.allowAnySHA1InWant，可直接按 SHA 浅取
+          git fetch --quiet --depth 1 origin "${{ github.sha }}"
+          git checkout --quiet FETCH_HEAD
+          echo "已检出 ${{ github.sha }}"
+          ls -la | head -15
 
       - name: Setup JDK 21
         run: |
