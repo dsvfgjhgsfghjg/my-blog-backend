@@ -81,8 +81,10 @@ jobs:
           # 服务端已开启 uploadpack.allowAnySHA1InWant，可直接按 SHA 浅取
           git fetch --quiet --depth 1 origin "${{ github.sha }}"
           git checkout --quiet FETCH_HEAD
-          echo "已检出 ${{ github.sha }}"
-          ls -la | head -15
+          # 注意：不要写 `ls -la | head -N`。head 读满即退出会关闭管道，
+          # ls 收到 SIGPIPE(141)，在本步骤的 `-o pipefail` 下整条管道判为失败，
+          # 再叠加 `set -e` 就会直接中止整个 job。
+          echo "已检出 ${{ github.sha }}，工作区文件数 $(ls -1 | wc -l)"
 
       - name: Setup JDK 21
         run: |
