@@ -85,7 +85,16 @@ jobs:
           SPRING_DATASOURCE_PASSWORD: testpass
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 16379
-        run: ./gradlew test || echo "Tests failed but continuing build"
+          # application.yml 中 minio.secret-key 的默认值是空串，而 MinIO 的
+          # Credentials 要求 secret 至少 8 位、access key 至少 3 位，否则构造时直接抛
+          # IllegalArgumentException → MinioConfig 建 Bean 失败 → Spring 上下文起不来
+          # → 所有 @SpringBootTest 全部连带失败。这里给测试用的占位值；
+          # MinioClient.builder() 只构造不连接，因此不需要真实的 MinIO 服务。
+          MINIO_ACCESS_KEY: testaccesskey
+          MINIO_SECRET_KEY: testsecretkey123
+        # 不再用 `|| echo` 吞掉失败：测试是质量门禁，失败就应该拦住流水线，
+        # 而不是让坏代码照样构建、推送、上线。
+        run: ./gradlew test
 
       # ============================================
       # 构建并推送镜像（仅 master/main）
