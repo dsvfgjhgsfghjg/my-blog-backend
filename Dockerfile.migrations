@@ -1,0 +1,9 @@
+# 数据库迁移镜像 —— 供宿主侧的 compose `migrate` 一次性服务使用。
+#
+# 设计意图：把迁移 SQL 打进镜像，从而
+#   1. 宿主不需要从 CI 同步任何文件（拉取式部署的前提）
+#   2. 连接信息只在运行时由 compose 从宿主 .env 注入，不烘进镜像
+ARG BASE_IMAGE=flyway/flyway:10-alpine
+FROM ${BASE_IMAGE}
+
+COPY src/main/resources/db/migration /flyway/sql
