@@ -65,7 +65,10 @@ jobs:
         run: |
           set -e
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          URL="http://oauth2:${GIT_TOKEN}@127.0.0.1:3000/leoxiao/backend.git"
+          # 注意：不能用 127.0.0.1 —— 本 job 跑在 runner 容器内，回环地址是
+          # 容器自己的，不是宿主的。runner 与 Gitea 同处 gitea-network，
+          # 用容器名直连。（镜像操作能用 127.0.0.1 是因为那由宿主 daemon 发起。）
+          URL="http://oauth2:${GIT_TOKEN}@gitea-server-1.27:3000/leoxiao/backend.git"
           cd "$GITHUB_WORKSPACE"
           if [ ! -d .git ]; then
             git init --quiet .
