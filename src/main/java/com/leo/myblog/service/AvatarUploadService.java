@@ -405,10 +405,13 @@ public class AvatarUploadService {
             return null;
         }
         
-        // 安全修复V13: 防止目录穿越攻击
-        validateObjectPath(objectPath);
-        
         try {
+            // 安全修复V13: 防止目录穿越攻击。
+            // 必须放在 try 内：数据库里可能存着 https:// 外链（validateAvatarUrl 允许）
+            // 或历史遗留的展示 URL，这类值本就不是 MinIO 对象路径。若在 try 外抛出，
+            // 异常会直穿到 controller 变成 500，而正确语义是「找不到」→ 404。
+            validateObjectPath(objectPath);
+
             // 从 MinIO 下载文件
             InputStream inputStream = minioClient.getObject(
                 GetObjectArgs.builder()
@@ -416,7 +419,7 @@ public class AvatarUploadService {
                     .object(objectPath)
                     .build()
             );
-            
+
             // 将 InputStream 转换为 byte[]
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[4096];
@@ -424,12 +427,15 @@ public class AvatarUploadService {
             while ((bytesRead = inputStream.read(chunk)) != -1) {
                 buffer.write(chunk, 0, bytesRead);
             }
-            
+
             inputStream.close();
-            
+
             log.debug("成功获取用户头像: path={}, size={} bytes", objectPath, buffer.size());
             return buffer.toByteArray();
-            
+
+        } catch (BusinessException e) {
+            log.warn("头像路径不合法，按不存在处理: path={}, reason={}", objectPath, e.getMessage());
+            return null;
         } catch (Exception e) {
             log.error("从 MinIO 获取头像失败: path={}", objectPath, e);
             return null;

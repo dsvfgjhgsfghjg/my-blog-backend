@@ -22,6 +22,7 @@ import com.leo.myblog.service.AvatarUploadService;
 import com.leo.myblog.service.TokenBlacklistService;
 import com.leo.myblog.service.UserService;
 import com.leo.myblog.util.AbilityValidator;
+import com.leo.myblog.util.ImageContentTypeUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -323,18 +324,12 @@ public class UserController {
                 return ResponseEntity.notFound().build();
             }
             
-            // 内联展示：使用 inline，允许浏览器直接渲染图片
+            // 位图用 inline 直接渲染（GIF 可正常播放）；SVG 强制 attachment
             HttpHeaders headers = new HttpHeaders();
-            String contentType = getImageContentType(avatarPath);
-            headers.setContentType(org.springframework.http.MediaType.parseMediaType(contentType));
+            ImageContentTypeUtils.applyImageHeaders(headers, avatarPath,
+                    ImageContentTypeUtils.Disposition.AUTO);
             headers.setContentLength(avatarData.length);
             headers.setCacheControl("private, max-age=3600"); // 缓存1小时（私有）
-            headers.setContentDisposition(
-                org.springframework.http.ContentDisposition
-                    .inline()
-                    .filename("avatar" + getFileExtensionFromPath(avatarPath))
-                    .build()
-            );
             
             return new ResponseEntity<>(avatarData, headers, org.springframework.http.HttpStatus.OK);
             
@@ -384,20 +379,12 @@ public class UserController {
                 return ResponseEntity.notFound().build();
             }
             
-            // 设置响应头
+            // 该端点语义是「带权限的下载」，保持 attachment 不变
             HttpHeaders headers = new HttpHeaders();
-            // 根据文件扩展名设置 Content-Type
-            String contentType = getImageContentType(avatarPath);
-            headers.setContentType(org.springframework.http.MediaType.parseMediaType(contentType));
+            ImageContentTypeUtils.applyImageHeaders(headers, avatarPath,
+                    ImageContentTypeUtils.Disposition.ATTACHMENT);
             headers.setContentLength(avatarData.length);
             headers.setCacheControl("public, max-age=86400"); // 缓存1天
-            // 安全修复V4/V11: 添加Content-Disposition为attachment，防止浏览器内联执行恶意脚本
-            headers.setContentDisposition(
-                org.springframework.http.ContentDisposition
-                    .attachment()
-                    .filename("avatar" + getFileExtensionFromPath(avatarPath))
-                    .build()
-            );
             
             return new ResponseEntity<>(avatarData, headers, org.springframework.http.HttpStatus.OK);
             
@@ -405,40 +392,6 @@ public class UserController {
             log.error("获取头像失败: userId={}", targetUserId, e);
             return ResponseEntity.status(500).body(null);
         }
-    }
-    
-    /**
-     * 根据文件路径判断图片类型
-     */
-    private String getImageContentType(String filePath) {
-        if (filePath == null) {
-            return "image/jpeg";
-        }
-        
-        String lowerPath = filePath.toLowerCase();
-        if (lowerPath.endsWith(".png")) {
-            return "image/png";
-        } else if (lowerPath.endsWith(".gif")) {
-            return "image/gif";
-        } else if (lowerPath.endsWith(".webp")) {
-            return "image/webp";
-        } else {
-            return "image/jpeg"; // 默认 JPEG
-        }
-    }
-    
-    /**
-     * 从文件路径中提取扩展名
-     */
-    private String getFileExtensionFromPath(String filePath) {
-        if (filePath == null || filePath.isEmpty()) {
-            return ".jpg";
-        }
-        int lastDotIndex = filePath.lastIndexOf('.');
-        if (lastDotIndex == -1) {
-            return ".jpg";
-        }
-        return filePath.substring(lastDotIndex);
     }
     
     /**
@@ -466,19 +419,12 @@ public class UserController {
                 return ResponseEntity.notFound().build();
             }
             
-            // 设置响应头
+            // 该端点被 <el-avatar :src> 直连（评论区等），位图用 inline 便于渲染
             HttpHeaders headers = new HttpHeaders();
-            String contentType = getImageContentType(avatarPath);
-            headers.setContentType(org.springframework.http.MediaType.parseMediaType(contentType));
+            ImageContentTypeUtils.applyImageHeaders(headers, avatarPath,
+                    ImageContentTypeUtils.Disposition.AUTO);
             headers.setContentLength(avatarData.length);
             headers.setCacheControl("public, max-age=86400"); // 缓存1天
-            // 安全修复V9: 添加Content-Disposition为attachment，防止内联执行
-            headers.setContentDisposition(
-                org.springframework.http.ContentDisposition
-                    .attachment()
-                    .filename("avatar" + getFileExtensionFromPath(avatarPath))
-                    .build()
-            );
             
             return new ResponseEntity<>(avatarData, headers, org.springframework.http.HttpStatus.OK);
             

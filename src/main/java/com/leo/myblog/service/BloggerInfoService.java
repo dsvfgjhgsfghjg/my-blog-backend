@@ -8,6 +8,7 @@ import com.leo.myblog.dto.response.BloggerInfoResponse;
 import com.leo.myblog.entity.BloggerInfo;
 import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.mapper.BloggerInfoMapper;
+import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -68,33 +69,48 @@ public class BloggerInfoService {
     }
     
     /**
-     * 获取博主头像（公开接口）
-     * @return 头像二进制数据
+     * 头像二进制数据 + 其 MinIO 对象路径。
+     *
+     * <p>路径同时携带扩展名，供上层推导 Content-Type。此前该方法只返回 byte[]，
+     * controller 无从得知实际格式，只能把 Content-Type 写死成 image/jpeg ——
+     * 字节是 GIF 却声明 JPEG，浏览器解码失败直接破图。
      */
-    public byte[] getBloggerAvatar() {
+    public record AvatarContent(byte[] data, String objectPath) {
+    }
+
+    /**
+     * 获取博主头像（公开接口）
+     *
+     * @return 头像二进制与其对象路径；未设置或读取失败时返回 null
+     */
+    public AvatarContent getBloggerAvatar() {
         try {
             BloggerInfo info = getOrCreateBloggerInfo();
-            
+
             if (info.getAvatar() == null || info.getAvatar().isEmpty()) {
                 log.warn("博主头像未设置");
                 return null;
             }
-            
+
             // 安全修复V13: 验证路径合法性，防止目录穿越攻击
             validateObjectPath(info.getAvatar());
-            
+
             // 从 MinIO 获取头像文件
-            io.minio.GetObjectArgs args = io.minio.GetObjectArgs.builder()
+            byte[] data;
+            try (InputStream inputStream = minioClient.getObject(GetObjectArgs.builder()
                     .bucket(bucketName)
                     .object(info.getAvatar())
-                    .build();
-            
-            java.io.InputStream inputStream = minioClient.getObject(args);
-            byte[] data = inputStream.readAllBytes();
-            inputStream.close();
-            
-            return data;
-            
+                    .build())) {
+                data = inputStream.readAllBytes();
+            }
+
+            if (data.length == 0) {
+                log.warn("博主头像文件为空: {}", info.getAvatar());
+                return null;
+            }
+
+            return new AvatarContent(data, info.getAvatar());
+
         } catch (Exception e) {
             log.error("获取博主头像失败", e);
             return null;
@@ -209,7 +225,10 @@ public class BloggerInfoService {
         
         // 更新字段
         info.setName(request.getName());
-        info.setAvatar(request.getAvatar());
+        // 头像只能由 /api/blogger/avatar/upload 变更，此处刻意不写 avatar。
+        // 原因：convertToResponse 会把 avatar 字段投影成展示 URL「/api/blogger/avatar」，
+        // 前端 Object.assign 回填表单后原样回传，若此处照写，DB 里的对象路径会被覆盖成
+        // 这个伪 URL，而 validateObjectPath 拒绝以「/」开头的路径 —— 头像随即永久 404。
         info.setEmail(request.getEmail());
         info.setGithub(request.getGithub());
         info.setIntroduction(request.getIntroduction());

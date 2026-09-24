@@ -5,9 +5,13 @@ import com.leo.myblog.common.Result;
 import com.leo.myblog.dto.request.UpdateBloggerInfoRequest;
 import com.leo.myblog.dto.response.BloggerInfoResponse;
 import com.leo.myblog.service.BloggerInfoService;
+import com.leo.myblog.util.ImageContentTypeUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -47,35 +51,31 @@ public class BloggerInfoController {
     
     /**
      * 获取博主头像（公开接口）
-     * 安全修复V11: 添加Content-Disposition防止内联执行
+     *
+     * <p>Content-Type 按对象路径的实际扩展名推导 —— 此前硬编码为 image/jpeg，
+     * 导致 GIF 头像「字节是 GIF、声明是 JPEG」而无法播放。
      */
     @GetMapping("/avatar")
-    public org.springframework.http.ResponseEntity<byte[]> getBloggerAvatar() {
+    public ResponseEntity<byte[]> getBloggerAvatar() {
         try {
-            byte[] avatarData = bloggerInfoService.getBloggerAvatar();
-            
-            if (avatarData == null || avatarData.length == 0) {
-                return org.springframework.http.ResponseEntity.notFound().build();
+            BloggerInfoService.AvatarContent avatar = bloggerInfoService.getBloggerAvatar();
+
+            if (avatar == null) {
+                return ResponseEntity.notFound().build();
             }
-            
-            // 设置响应头
-            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-            headers.setContentType(org.springframework.http.MediaType.IMAGE_JPEG); // 默认JPEG
-            headers.setContentLength(avatarData.length);
+
+            HttpHeaders headers = new HttpHeaders();
+            // 位图 → inline（GIF 可正常播放），SVG 与未知格式 → attachment
+            ImageContentTypeUtils.applyImageHeaders(headers, avatar.objectPath(),
+                    ImageContentTypeUtils.Disposition.AUTO);
+            headers.setContentLength(avatar.data().length);
             headers.setCacheControl("public, max-age=86400"); // 缓存1天
-            // 安全修复V11: 添加Content-Disposition为attachment，防止浏览器内联执行恶意脚本
-            headers.setContentDisposition(
-                org.springframework.http.ContentDisposition
-                    .attachment()
-                    .filename("blogger-avatar.jpg")
-                    .build()
-            );
-            
-            return new org.springframework.http.ResponseEntity<>(avatarData, headers, org.springframework.http.HttpStatus.OK);
-            
+
+            return new ResponseEntity<>(avatar.data(), headers, HttpStatus.OK);
+
         } catch (Exception e) {
             log.error("获取博主头像失败", e);
-            return org.springframework.http.ResponseEntity.status(500).body(null);
+            return ResponseEntity.status(500).build();
         }
     }
     
