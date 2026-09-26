@@ -24,7 +24,12 @@ public class SystemConfigResponse {
      * 配置值
      */
     private String configValue;
-    
+
+    /**
+     * 默认值（null 表示该配置不可重置）
+     */
+    private String defaultValue;
+
     /**
      * 配置类型
      */

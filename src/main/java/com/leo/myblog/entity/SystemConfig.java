@@ -29,7 +29,12 @@ public class SystemConfig {
      * 配置值
      */
     private String configValue;
-    
+
+    /**
+     * 默认值（重置配置时使用，null 表示该配置不可重置）
+     */
+    private String defaultValue;
+
     /**
      * 配置类型：STRING, NUMBER, BOOLEAN, JSON
      */

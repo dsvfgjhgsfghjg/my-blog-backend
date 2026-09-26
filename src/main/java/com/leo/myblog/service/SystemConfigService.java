@@ -112,12 +112,13 @@ public class SystemConfigService {
         validateConfigValue(configValue, config.getConfigType());
         
         // 更新配置
+        String oldValue = config.getConfigValue();
         config.setConfigValue(configValue);
         config.setUpdateTime(LocalDateTime.now());
         systemConfigMapper.updateById(config);
-        
-        log.info("系统配置已更新: userId={}, configKey={}, oldValue={}, newValue={}", 
-                userId, configKey, config.getConfigValue(), configValue);
+
+        log.info("系统配置已更新: userId={}, configKey={}, oldValue={}, newValue={}",
+                userId, configKey, oldValue, configValue);
     }
     
     /**
@@ -220,16 +221,49 @@ public class SystemConfigService {
     
     /**
      * 重置配置到默认值
+     * <p>
+     * 默认值存放在 t_system_config.default_value 中，由各版本的种子迁移写入（见 V34）。
+     * 未定义默认值（default_value 为 NULL）的配置项不支持重置。
      */
     @Transactional(rollbackFor = Exception.class)
     public void resetConfig(Long userId, String configKey) {
         // 验证权限
         validateSystemConfigPermission(userId);
-        
-        // TODO: 从配置文件或常量中获取默认值
-        throw new BusinessException("暂不支持重置配置");
+
+        // 查询配置项
+        LambdaQueryWrapper<SystemConfig> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SystemConfig::getConfigKey, configKey);
+        SystemConfig config = systemConfigMapper.selectOne(wrapper);
+
+        if (config == null) {
+            throw new BusinessException("配置项不存在: " + configKey);
+        }
+
+        // 重置也是一种修改，与 updateConfig 保持一致：不可编辑的配置项不允许重置
+        if (!Boolean.TRUE.equals(config.getIsEditable())) {
+            throw new BusinessException("该配置项不可编辑: " + configKey);
+        }
+
+        String defaultValue = config.getDefaultValue();
+        if (defaultValue == null) {
+            throw new BusinessException("该配置项未定义默认值，无法重置: " + configKey);
+        }
+
+        String oldValue = config.getConfigValue();
+        if (defaultValue.equals(oldValue)) {
+            log.info("配置项已是默认值，无需重置: userId={}, configKey={}", userId, configKey);
+            return;
+        }
+
+        // 重置配置
+        config.setConfigValue(defaultValue);
+        config.setUpdateTime(LocalDateTime.now());
+        systemConfigMapper.updateById(config);
+
+        log.info("系统配置已重置: userId={}, configKey={}, oldValue={}, defaultValue={}",
+                userId, configKey, oldValue, defaultValue);
     }
-    
+
     /**
      * 验证用户是否有管理系统配置的权限
      * 必须是管理员且拥有 manage_system_config 能力或超级管理员
@@ -327,6 +361,7 @@ public class SystemConfigService {
         response.setId(config.getId());
         response.setConfigKey(config.getConfigKey());
         response.setConfigValue(config.getConfigValue());
+        response.setDefaultValue(config.getDefaultValue());
         response.setConfigType(config.getConfigType());
         response.setDescription(config.getDescription());
         response.setCategory(config.getCategory());
