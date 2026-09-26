@@ -83,6 +83,10 @@ public class LoginService {
     private static final long LOGIN_RESULT_TTL_SECONDS = 90;
     private static final long LAST_METHOD_TTL_DAYS = 30;
 
+    /** 已通过第一步验证码的标记（key 后缀为 username:ip），第二步据此放行 */
+    private static final String STEP1_PASSED_PREFIX = "login:step1_passed:";
+    private static final long STEP1_PASSED_TTL_SECONDS = 300;
+
     private static final String STATUS_PENDING = "pending";
     private static final String STATUS_REJECTED = "rejected";
     private static final String STATUS_EXPIRED = "expired";
@@ -109,6 +113,11 @@ public class LoginService {
 
         // 3. 查询用户
         String normalizedUsername = request.getUsername().trim().toLowerCase();
+
+        // 验证码已通过，登记标记供第二步放行。用户不存在也登记 —— 若只在用户存在时登记，
+        // 第二步的「请先完成验证码校验」就会变成一条判断用户名是否存在的旁路信息。
+        markStep1Passed(normalizedUsername, clientIp);
+
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getUsername, normalizedUsername);
         User user = userMapper.selectOne(wrapper);
@@ -172,6 +181,38 @@ public class LoginService {
         return response;
     }
 
+    // ==================== 第二步门禁 ====================
+
+    /**
+     * 登记「该用户名 + IP 已通过第一步验证码」
+     * <p>
+     * 见 {@link #requireStep1Passed}：标记用 set 而非一次性消费，因为认证器路径的
+     * 「重新发送」需要重复调用 step2-challenge。
+     */
+    void markStep1Passed(String normalizedUsername, String clientIp) {
+        redisTemplate.opsForValue().set(
+                STEP1_PASSED_PREFIX + normalizedUsername + ":" + clientIp,
+                "1", STEP1_PASSED_TTL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 校验第二步请求确实来自刚通过第一步验证码的同一个客户端
+     * <p>
+     * 两个 step2 接口自身都不校验验证码，没有这道门的话：{@code step2-password} 会变成
+     * 无验证码的密码爆破入口，{@code step2-challenge} 则可以用来探测用户名是否存在、
+     * 是否绑定设备（「用户名或密码错误」与「没有绑定的 App 设备」的差异会泄露）。
+     * <p>
+     * 标记按「用户名 + IP」绑定并带 TTL。TTL 过期或换了 IP 都只是要求重走一次第一步，
+     * 用户重输用户名 + 验证码即可恢复，不会锁死账号。
+     */
+    void requireStep1Passed(String normalizedUsername, String clientIp) {
+        String key = STEP1_PASSED_PREFIX + normalizedUsername + ":" + clientIp;
+        if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+            log.warn("第二步请求未通过第一步验证: username={}, ip={}", normalizedUsername, clientIp);
+            throw new BusinessException("验证已超时，请返回上一步重新验证");
+        }
+    }
+
     // ==================== Step 2a: 密码登录 ====================
 
     /**
@@ -192,8 +233,12 @@ public class LoginService {
             throw new BusinessException("IP已被封禁，无法登录");
         }
 
-        // 登录频率限制
         String normalizedUsername = request.getUsername().trim().toLowerCase();
+
+        // 必须先过第一步的验证码，否则本接口就是一个无验证码的密码爆破入口
+        requireStep1Passed(normalizedUsername, clientIp);
+
+        // 登录频率限制
         if (!loginRateLimitService.isLoginAllowed(normalizedUsername, clientIp)) {
             long remainingTime = loginRateLimitService.getRemainingLockTime(normalizedUsername, clientIp);
             String lockMessage = String.format("密码错误次数过多，账户已锁定%d秒", remainingTime);
@@ -269,6 +314,9 @@ public class LoginService {
         }
 
         String normalizedUsername = request.getUsername().trim().toLowerCase();
+
+        // 必须先过第一步的验证码：否则本接口可被用来枚举用户名是否存在、是否绑定设备
+        requireStep1Passed(normalizedUsername, clientIp);
 
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getUsername, normalizedUsername);
@@ -408,6 +456,13 @@ public class LoginService {
             // 不删结果：保持幂等，重复轮询仍得到 rejected，
             // 否则第二次轮询会变成 expired 造成前端困惑
             response.setStatus(STATUS_REJECTED);
+            return response;
+        }
+
+        if (STATUS_EXPIRED.equals(result)) {
+            // 被 invalidateUserLoginChallenges 作废的挑战会写这个字面量，必须显式映射：
+            // 否则会落到末尾的 unknown，前端把 unknown 当成「继续轮询」，要白等到倒计时结束
+            response.setStatus(STATUS_EXPIRED);
             return response;
         }
 
