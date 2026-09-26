@@ -1,7 +1,9 @@
 package com.leo.myblog.controller;
 
+import com.leo.myblog.annotation.AuditLog;
 import com.leo.myblog.annotation.RequireAdmin;
 import com.leo.myblog.annotation.RequireTotp;
+import com.leo.myblog.common.AuditAction;
 import com.leo.myblog.common.Result;
 import com.leo.myblog.entity.IpBan;
 import com.leo.myblog.service.IpBanService;
@@ -43,6 +45,9 @@ public class SecurityAdminController {
      */
     @RequireAdmin
     @RequireTotp(operation = "封禁IP", module = "security.totp.system_config")
+    // 显式给描述：光靠推导只能得到「封禁 IP 1.2.3.4」，看不出封多久
+    @AuditLog(action = AuditAction.BAN_IP,
+              description = "封禁 IP {ipAddress}，时长 {durationHours} 小时")
     @PostMapping("/ban-ip")
     public Result<Void> banIp(
             @RequestAttribute Long userId,

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.leo.myblog.dto.request.GetAuditLogRequest;
 import com.leo.myblog.dto.response.AuditLogResponse;
 import com.leo.myblog.entity.AuditLog;
+import com.leo.myblog.enums.AuditLevel;
 import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.mapper.AuditLogMapper;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -73,6 +75,11 @@ public class AuditLogService {
         // 按模块筛选
         if (request.getModule() != null && !request.getModule().isEmpty()) {
             wrapper.eq(AuditLog::getModule, request.getModule());
+        }
+
+        // 按等级筛选
+        if (request.getLevel() != null && !request.getLevel().isEmpty()) {
+            wrapper.eq(AuditLog::getLevel, AuditLevel.from(request.getLevel()).getValue());
         }
         
         // 按成功状态筛选
@@ -162,16 +169,35 @@ public class AuditLogService {
         Long failCount = auditLogMapper.selectCount(failWrapper);
         stats.setFailCount(failCount);
         
-        // 各模块统计
-        List<String> modules = List.of("USER", "POST", "COMMENT", "CATEGORY", "TAG", "SYSTEM");
-        for (String module : modules) {
-            LambdaQueryWrapper<AuditLog> moduleWrapper = new LambdaQueryWrapper<>();
-            moduleWrapper.eq(AuditLog::getModule, module);
-            Long count = auditLogMapper.selectCount(moduleWrapper);
-            stats.getModuleStats().put(module, count);
+        // 各模块统计：按实际数据分组，不再写死模块列表
+        // （原先只循环 6 个模块，BLOGGER/AUDIO 永远统计不到）
+        for (Map<String, Object> row : auditLogMapper.countByModule()) {
+            stats.getModuleStats().put(
+                    String.valueOf(row.get("name")), toLong(row.get("total")));
         }
-        
+
+        // 各等级统计：新增，供前端展示"最严重的那些有多少"
+        for (Map<String, Object> row : auditLogMapper.countByLevel()) {
+            stats.getLevelStats().put(
+                    String.valueOf(row.get("name")), toLong(row.get("total")));
+        }
+
         return stats;
+    }
+
+    /** 统计查询返回的计数可能是 Long/Integer/BigInteger，统一转换 */
+    private Long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
     
     /**
@@ -275,5 +301,7 @@ public class AuditLogService {
         private Long successCount;
         private Long failCount;
         private java.util.Map<String, Long> moduleStats = new java.util.HashMap<>();
+        /** 各等级条数，键为 INFO/NOTICE/WARNING/ERROR/CRITICAL */
+        private java.util.Map<String, Long> levelStats = new java.util.HashMap<>();
     }
 }

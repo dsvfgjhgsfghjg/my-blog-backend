@@ -1,8 +1,10 @@
 package com.leo.myblog.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.leo.myblog.annotation.AuditLog;
 import com.leo.myblog.annotation.RequireAdmin;
 import com.leo.myblog.annotation.RequireTotp;
+import com.leo.myblog.common.AuditAction;
 import com.leo.myblog.common.Result;
 import com.leo.myblog.dto.request.AbilityInfo;
 import com.leo.myblog.dto.request.AdminResetPasswordRequest;
@@ -526,6 +528,9 @@ public class UserController {
      */
     @RequireTotp(operation = "设置管理员", module = "security.totp.user_management")
     @RequireAdmin
+    // 等级由 action 推出（CHANGE_ROLE → 关键）；描述里带上改成什么角色，便于事后追溯
+    @AuditLog(action = AuditAction.CHANGE_ROLE,
+              description = "修改用户 {targetUserId} 的角色（管理员：{isAdmin}）")
     @PutMapping("/admin/{targetUserId}/role")
     public Result<Void> updateUserRole(@RequestAttribute Long userId,
                                        @PathVariable Long targetUserId,

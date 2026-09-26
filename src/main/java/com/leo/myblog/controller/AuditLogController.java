@@ -1,8 +1,10 @@
 package com.leo.myblog.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.leo.myblog.annotation.AuditLog;
 import com.leo.myblog.annotation.RequireAdmin;
 import com.leo.myblog.annotation.RequireTotp;
+import com.leo.myblog.common.AuditAction;
 import com.leo.myblog.common.PageResult;
 import com.leo.myblog.common.Result;
 import com.leo.myblog.dto.request.GetAuditLogRequest;
@@ -70,6 +72,8 @@ public class AuditLogController {
      */
     @DeleteMapping("/expired")
     @RequireAdmin
+    // days 会被对象提取器排除（它是参数不是目标），所以显式写进描述
+    @AuditLog(action = AuditAction.CLEANUP, description = "清理 {days} 天前的审计日志")
     public Result<Integer> deleteExpiredLogs(@RequestParam(defaultValue = "30") int days) {
         log.info("删除过期审计日志: 保留{}天", days);
         

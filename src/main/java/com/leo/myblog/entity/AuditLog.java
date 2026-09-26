@@ -100,7 +100,16 @@ public class AuditLog {
      * 额外数据（JSON格式，存储业务相关数据）
      */
     private String extraData;
-    
+
+    /**
+     * 日志等级：INFO(信息)/NOTICE(记录)/WARNING(警告)/ERROR(错误)/CRITICAL(关键)
+     * <p>
+     * 由操作类型推出（见 {@code AuditLevelResolver}），操作失败时自动升级。
+     * 用 String 而非枚举入库，与 operationType/module 的既有风格一致，也避免
+     * MyBatis 枚举映射带来的额外配置。
+     */
+    private String level;
+
     /**
      * 创建时间
      */

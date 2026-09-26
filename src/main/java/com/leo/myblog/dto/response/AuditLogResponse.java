@@ -36,6 +36,11 @@ public class AuditLogResponse {
      * 操作模块
      */
     private String module;
+
+    /**
+     * 日志等级：INFO(信息)/NOTICE(记录)/WARNING(警告)/ERROR(错误)/CRITICAL(关键)
+     */
+    private String level;
     
     /**
      * 操作描述
@@ -106,6 +111,13 @@ public class AuditLogResponse {
      * 错误信息
      */
     private String errorMessage;
+
+    /**
+     * 响应消息
+     * <p>
+     * 实体与表里一直有这一列，但此前 DTO 没有该字段，写了库却不返回给前端 —— 补上。
+     */
+    private String responseMessage;
     
     /**
      * 创建时间

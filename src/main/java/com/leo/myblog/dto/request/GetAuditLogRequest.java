@@ -32,6 +32,11 @@ public class GetAuditLogRequest {
      * 操作模块
      */
     private String module;
+
+    /**
+     * 按日志等级筛选：INFO / NOTICE / WARNING / ERROR / CRITICAL
+     */
+    private String level;
     
     /**
      * 是否成功
