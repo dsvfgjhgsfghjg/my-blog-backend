@@ -942,6 +942,28 @@ public class AppAuthService {
     }
 
     /**
+     * 查询某个挑战的认证结果
+     * <p>
+     * 敏感操作验证的权威数据源：结果由 {@link #updateChallengeResult} 落在 auth_history 表里。
+     * 注意不要拿登录挑战的 challengeId 来查 —— 登录挑战的结果在 Redis 的
+     * {@code app:auth:login_result:} 命名空间，两者是不同的信任域。
+     *
+     * @param challengeId 挑战 ID
+     * @param userId      用户 ID（必须归属校验，防止用别人的挑战 ID 蒙混过关）
+     * @return 状态 pending / approved / rejected / expired；查不到返回 null
+     */
+    public String getChallengeStatus(String challengeId, Long userId) {
+        if (challengeId == null || userId == null) {
+            return null;
+        }
+        LambdaQueryWrapper<AuthHistory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AuthHistory::getChallengeId, challengeId)
+                .eq(AuthHistory::getUserId, userId);
+        AuthHistory history = authHistoryMapper.selectOne(wrapper);
+        return history != null ? history.getStatus() : null;
+    }
+
+    /**
      * 更新挑战结果
      *
      * @param challengeId 挑战 ID

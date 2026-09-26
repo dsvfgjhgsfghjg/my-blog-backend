@@ -77,6 +77,32 @@ public class OAuth2TokenService {
         };
     }
 
+    /**
+     * 为已完成身份校验的用户直接颁发 Token（两步登录专用）
+     * <p>
+     * 与 {@link #issueToken} 的区别：<b>不重复校验旋转验证码、IP 封禁与登录频率限制</b>。
+     * 两步登录的两条路径（step2-password 的密码校验、认证器挑战批准的轮询）都已在各自
+     * 环节完成安全校验，若再走 {@code issueToken} 会重复校验验证码并重复累计失败计数。
+     * <p>
+     * 产出与 {@code POST /api/auth2/token} 完全一致：JWT access_token + rt_ 前缀 refresh_token，
+     * 并写入 oauth2_authorization（只落 sha256 哈希），从而复用整条 Token 刷新链路。
+     * <p>
+     * 注意：本方法只签发 Token，不碰 Cookie —— Cookie 由 Controller 用
+     * {@code CookieSecurityConfig.createSecureCookie} 写入响应。
+     *
+     * @param user      已完成身份校验的用户
+     * @param grantType 授权类型，"password" / "authenticator_app"，仅用于审计归因
+     * @param clientIp  客户端 IP（记录设备会话用；WS 线程里传 null 表示拿不到真实 IP）
+     * @param userAgent 客户端 User-Agent（同上）
+     */
+    public OAuth2TokenResponse issueTokenForUser(User user, String grantType,
+                                                 String clientIp, String userAgent) {
+        if (user == null || user.getId() == null) {
+            throw new BusinessException("用户不存在");
+        }
+        return createTokenResponse(user, null, grantType, clientIp, userAgent);
+    }
+
     // ==================== Password Grant ====================
 
     /**

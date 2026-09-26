@@ -5,21 +5,15 @@ import com.leo.myblog.dto.request.LoginStep1Request;
 import com.leo.myblog.dto.request.LoginStep2ChallengeRequest;
 import com.leo.myblog.dto.request.LoginStep2PasswordRequest;
 import com.leo.myblog.dto.response.LoginPollResponse;
-import com.leo.myblog.dto.response.LoginResponse;
 import com.leo.myblog.dto.response.LoginStep1Response;
+import com.leo.myblog.dto.response.OAuth2TokenResponse;
 import com.leo.myblog.entity.AppDevice;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.entity.UserPreference;
 import com.leo.myblog.enums.LoginMethod;
 import com.leo.myblog.exception.BusinessException;
-import com.leo.myblog.mapper.AppDeviceMapper;
 import com.leo.myblog.mapper.UserMapper;
-import com.leo.myblog.util.JwtUtil;
-import com.leo.myblog.util.UserAgentParser;
-import com.leo.myblog.config.CookieSecurityConfig;
 import com.leo.myblog.websocket.WebSocketSessionManager;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -29,10 +23,8 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * 两步登录服务
@@ -40,7 +32,17 @@ import java.util.stream.Collectors;
  * 仿微软登录流程：
  * Step 1: 提交用户名 + 旋转验证码 → 获取可用登录方式
  * Step 2a: 密码登录 → 验证密码 → 返回 Token
- * Step 2b: 挑战推送登录 → 生成三选一挑战 → App 验证 → 返回 Token
+ * Step 2b: 挑战推送登录 → 生成三选一挑战 → App 验证 → 轮询取 Token
+ * <p>
+ * 关于「数字匹配」（number matching）：
+ * 浏览器展示正确数字，App 只收到 3 个候选数字，用户挑出与浏览器一致的那个。
+ * 因此 {@link #step2Challenge} 会把 correctNumber 回给发起登录的浏览器，但推送给 App 的
+ * 消息里<b>绝不能</b>包含 correctNumber —— 这个约束在
+ * {@code AuthWebSocketHandler.buildLoginChallengeMessage} 里必须严格遵守。
+ * <p>
+ * 关于 Token 签发位置：认证器的批准发生在 WebSocket 线程里（拿不到真实 IP/UA，也没有
+ * HttpServletResponse），所以挑战批准时<b>只置状态不签发 Token</b>，
+ * 由浏览器轮询 {@link #pollLoginResult} 时在 HTTP 线程里签发并写 Cookie。
  */
 @Slf4j
 @Service
@@ -51,28 +53,42 @@ public class LoginService {
     private final UserPreferenceService userPreferenceService;
     private final AppAuthService appAuthService;
     private final SliderCaptchaService sliderCaptchaService;
-    private final JwtUtil jwtUtil;
-    private final TokenSessionService tokenSessionService;
     private final LoginRateLimitService loginRateLimitService;
     private final LoginLogService loginLogService;
     private final IpBanService ipBanService;
-    private final UserAgentParser userAgentParser;
     private final StringRedisTemplate redisTemplate;
-    private final AppDeviceMapper appDeviceMapper;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
-    private final CookieSecurityConfig cookieSecurityConfig;
     private final WebSocketSessionManager webSocketSessionManager;
+    private final OAuth2TokenService oAuth2TokenService;
 
     // Redis 键前缀
     private static final String LAST_LOGIN_METHOD_PREFIX = "user:login:last_method:";
+    /** 登录挑战详情，Redis Hash，字段见下方 FIELD_* */
     private static final String LOGIN_CHALLENGE_PREFIX = "app:auth:login_challenge:";
+    /** 登录挑战结果：pending / rejected / approved:<userId> */
     private static final String LOGIN_RESULT_PREFIX = "app:auth:login_result:";
+    /** 用户待处理登录挑战集合（成员为 challengeId），供设备上线后补推 */
     private static final String LOGIN_PENDING_PREFIX = "app:auth:login_pending:";
     private static final String LAST_VERIFY_METHOD_PREFIX = "user:verify:last_method:";
 
+    // 挑战 Hash 的字段名
+    private static final String FIELD_USER_ID = "userId";
+    private static final String FIELD_NUMBERS = "numbers";
+    private static final String FIELD_CORRECT_NUMBER = "correctNumber";
+    private static final String FIELD_EXPIRES_AT = "expiresAt";
+
     private static final long LOGIN_CHALLENGE_TIMEOUT_SECONDS = 60;
+    /** 结果比挑战本身多留一段时间，让前端能稳定读到终态 */
+    private static final long LOGIN_RESULT_TTL_SECONDS = 90;
     private static final long LAST_METHOD_TTL_DAYS = 30;
+
+    private static final String STATUS_PENDING = "pending";
+    private static final String STATUS_REJECTED = "rejected";
+    private static final String STATUS_EXPIRED = "expired";
+    private static final String STATUS_APPROVED = "approved";
+    private static final String STATUS_QUEUED = "queued";
+    private static final String APPROVED_VALUE_PREFIX = STATUS_APPROVED + ":";
 
     // ==================== Step 1: 验证用户名 + 验证码 ====================
 
@@ -160,8 +176,13 @@ public class LoginService {
 
     /**
      * 第二步：密码方式登录
+     * <p>
+     * 本方法已完成频率限制、封禁检查、密码校验与登录日志，因此 Token 签发走
+     * {@code issueTokenForUser} 而不是 {@code issueToken}，避免重复校验验证码与重复计数。
+     * <p>
+     * 只签发 Token，不写 Cookie —— Cookie 由 Controller 写入响应。
      */
-    public LoginResponse step2Password(LoginStep2PasswordRequest request, HttpServletResponse httpResponse) {
+    public OAuth2TokenResponse step2Password(LoginStep2PasswordRequest request) {
         String clientIp = getClientIpAddress();
         String userAgent = getClientUserAgent();
 
@@ -175,7 +196,6 @@ public class LoginService {
         String normalizedUsername = request.getUsername().trim().toLowerCase();
         if (!loginRateLimitService.isLoginAllowed(normalizedUsername, clientIp)) {
             long remainingTime = loginRateLimitService.getRemainingLockTime(normalizedUsername, clientIp);
-            long failureCount = loginRateLimitService.getFailureCount(normalizedUsername, clientIp);
             String lockMessage = String.format("密码错误次数过多，账户已锁定%d秒", remainingTime);
             loginLogService.recordLoginFailure(normalizedUsername, clientIp, userAgent, lockMessage);
             throw new BusinessException(lockMessage);
@@ -218,46 +238,50 @@ public class LoginService {
         // 记录登录成功日志
         loginLogService.recordLoginSuccess(user.getId(), user.getUsername(), clientIp, userAgent);
 
-        // 生成 Token
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername());
-
-        // 解析设备信息
-        UserAgentParser.DeviceInfo deviceInfo = userAgentParser.parseUserAgent(userAgent);
-        String deviceDescription = deviceInfo.getDescription();
-        if ("Android".equals(deviceInfo.getOsName()) && deviceInfo.getAndroidRemark() != null) {
-            deviceDescription = deviceInfo.getAndroidDescription();
-        }
-
-        // 记录 Token 会话
-        tokenSessionService.recordSession(user.getId(), token, clientIp, userAgent, deviceDescription);
-
-        // 设置 HttpOnly Cookie
-        Cookie authCookie = cookieSecurityConfig.createSecureCookie(token);
-        httpResponse.addCookie(authCookie);
-
         // 记录最后一次登录方式
         recordLastLoginMethod(user.getId(), LoginMethod.PASSWORD.getValue());
 
         log.info("两步登录（密码）成功: userId={}, username={}, IP={}", user.getId(), user.getUsername(), clientIp);
 
-        // 构建响应
-        return buildLoginResponse(user, token);
+        return oAuth2TokenService.issueTokenForUser(
+                user, LoginMethod.PASSWORD.getValue(), clientIp, userAgent);
     }
 
     // ==================== Step 2b: 挑战推送登录 ====================
 
     /**
      * 第二步：挑战推送方式登录
-     * 生成登录挑战并排队，等待 App 端验证
+     * <p>
+     * 只负责生成并登记挑战，返回的 {@link LoginChallenge} 供 Controller 推送给在线设备。
+     * 主动推送放在 Controller 层是因为 {@code AuthWebSocketHandler} 反向依赖了本服务，
+     * 若在此处注入它会形成循环依赖。
+     *
+     * @return 挑战详情（含 userId、3 个候选数字、正确数字、过期时间）
      */
-    public LoginPollResponse step2Challenge(LoginStep2ChallengeRequest request) {
+    public LoginChallenge step2Challenge(LoginStep2ChallengeRequest request) {
         String clientIp = getClientIpAddress();
         String userAgent = getClientUserAgent();
 
+        // IP 封禁检查
+        if (ipBanService.isIpBanned(clientIp)) {
+            loginLogService.recordLoginFailure(request.getUsername(), clientIp, userAgent, "IP已被封禁");
+            throw new BusinessException("IP已被封禁，无法登录");
+        }
+
         String normalizedUsername = request.getUsername().trim().toLowerCase();
+
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getUsername, normalizedUsername);
         User user = userMapper.selectOne(wrapper);
+
+        // 与密码路径不同：这里不记失败计数（不能因为有人点了几下推送就把账号锁死），
+        // 但按「用户名 + IP」独立限流，防止推送轰炸 / MFA 疲劳攻击
+        if (!loginRateLimitService.isChallengeAllowed(normalizedUsername, clientIp)) {
+            long remaining = loginRateLimitService.getChallengeRemainingWindow(normalizedUsername, clientIp);
+            log.warn("登录挑战请求过于频繁: username={}, ip={}", normalizedUsername, clientIp);
+            throw new BusinessException(String.format("操作过于频繁，请 %d 秒后重试", remaining));
+        }
+        loginRateLimitService.recordChallengeRequest(normalizedUsername, clientIp);
 
         if (user == null) {
             throw new BusinessException("用户名或密码错误");
@@ -272,27 +296,23 @@ public class LoginService {
             throw new BusinessException("没有绑定的 App 设备，请先绑定设备或使用密码登录");
         }
 
-        // 生成登录挑战
+        // 单活跃挑战：作废该用户此前所有未完成的登录挑战，避免用户面对多条推送、
+        // 也把攻击者「同时挂多个挑战碰运气」的空间压到 1 个
+        invalidateUserLoginChallenges(user.getId());
+
         LoginChallenge challenge = generateLoginChallenge(user.getId());
 
-        log.info("生成登录挑战: userId={}, challengeId={}", user.getId(), challenge.getChallengeId());
+        log.info("生成登录挑战: userId={}, challengeId={}, numbers={}, correctNumber={}",
+                user.getId(), challenge.getChallengeId(),
+                Arrays.toString(challenge.getNumbers()), challenge.getCorrectNumber());
 
-        LoginPollResponse response = new LoginPollResponse();
-        response.setStatus("pending");
-        // 将 raw challengeId 存储到 Redis 中关联 userId，以便轮询时使用
-        String pollKey = LOGIN_CHALLENGE_PREFIX + challenge.getChallengeId();
-        redisTemplate.opsForValue().set(pollKey,
-                user.getId() + ":" + challenge.getChallengeId(),
-                LOGIN_CHALLENGE_TIMEOUT_SECONDS + 30, TimeUnit.SECONDS);
-
-        // 返回 challengeId 给前端，前端用这个 ID 轮询
-        response.setStatus("queued");
-
-        return response;
+        return challenge;
     }
 
     /**
-     * 生成登录挑战
+     * 生成并登记登录挑战（Redis Hash + 结果占位 + 待推送集合）
+     * <p>
+     * 3 个候选数字必须持久化：设备上线补推时要靠它还原挑战内容。
      */
     private LoginChallenge generateLoginChallenge(Long userId) {
         SecureRandom random = new SecureRandom();
@@ -307,101 +327,137 @@ public class LoginService {
         int correctIndex = random.nextInt(3);
         int correctNumber = numbers[correctIndex];
 
-        // 生成挑战 ID
         String challengeId = UUID.randomUUID().toString().replace("-", "");
 
-        // 存储登录挑战数据到 Redis
-        String resultKey = LOGIN_RESULT_PREFIX + challengeId;
-        redisTemplate.opsForValue().set(resultKey, "pending",
-                LOGIN_CHALLENGE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        // expiresAt 用「Unix 秒」：App 端 ChallengeDialogFragment 会做 expiresAt * 1000，
+        // 前端倒计时同理。写成毫秒会导致 App 一打开就显示「已过期」。
+        long expiresAt = System.currentTimeMillis() / 1000 + LOGIN_CHALLENGE_TIMEOUT_SECONDS;
 
-        // 存储挑战详情（供 WebSocket 验证时使用）
+        // 挑战详情（含 3 个候选数字，供设备上线补推时还原）
         String challengeKey = LOGIN_CHALLENGE_PREFIX + challengeId;
-        String challengeData = userId + ":" + correctNumber;
-        redisTemplate.opsForValue().set(challengeKey, challengeData,
-                LOGIN_CHALLENGE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        Map<String, String> challengeData = new HashMap<>();
+        challengeData.put(FIELD_USER_ID, String.valueOf(userId));
+        challengeData.put(FIELD_NUMBERS, numbers[0] + "," + numbers[1] + "," + numbers[2]);
+        challengeData.put(FIELD_CORRECT_NUMBER, String.valueOf(correctNumber));
+        challengeData.put(FIELD_EXPIRES_AT, String.valueOf(expiresAt));
+        redisTemplate.opsForHash().putAll(challengeKey, challengeData);
+        redisTemplate.expire(challengeKey, LOGIN_CHALLENGE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        // 加入用户待处理挑战集合
+        // 结果占位。注意只存 userId，不存 Token ——
+        // 明文凭证不该落在 Redis 里，且 Token 统一在轮询（HTTP 线程）时签发
+        redisTemplate.opsForValue().set(LOGIN_RESULT_PREFIX + challengeId, STATUS_PENDING,
+                LOGIN_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+
+        // 加入用户待处理集合，供设备稍后上线时补推
         String pendingKey = LOGIN_PENDING_PREFIX + userId;
         redisTemplate.opsForSet().add(pendingKey, challengeId);
         redisTemplate.expire(pendingKey, LOGIN_CHALLENGE_TIMEOUT_SECONDS + 10, TimeUnit.SECONDS);
 
-        // 也存储到原有的挑战系统中（用于 WebSocket 推送和验证兼容）
-        // 但注意：原有格式是 userId:correctNumber，我们使用 LOGIN_CHALLENGE_PREFIX 命名空间完全隔离
-        // 不需要修改原有挑战系统
+        return new LoginChallenge(challengeId, userId, numbers, correctNumber, expiresAt);
+    }
 
-        long expiresAt = System.currentTimeMillis() / 1000 + LOGIN_CHALLENGE_TIMEOUT_SECONDS;
+    /**
+     * 作废某用户所有未完成的登录挑战
+     */
+    public void invalidateUserLoginChallenges(Long userId) {
+        String pendingKey = LOGIN_PENDING_PREFIX + userId;
+        Set<String> challengeIds = redisTemplate.opsForSet().members(pendingKey);
+        if (challengeIds == null || challengeIds.isEmpty()) {
+            return;
+        }
 
-        log.info("生成登录挑战: challengeId={}, userId={}, numbers={}, correctNumber={}",
-                challengeId, userId, Arrays.toString(numbers), correctNumber);
+        for (String challengeId : challengeIds) {
+            redisTemplate.delete(LOGIN_CHALLENGE_PREFIX + challengeId);
+            // 置为 expired，让仍在轮询旧挑战的页面能立刻停下
+            redisTemplate.opsForValue().set(LOGIN_RESULT_PREFIX + challengeId, STATUS_EXPIRED,
+                    LOGIN_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+        }
+        redisTemplate.delete(pendingKey);
 
-        return new LoginChallenge(challengeId, numbers, correctNumber, expiresAt);
+        log.info("已作废 {} 个旧的登录挑战: userId={}", challengeIds.size(), userId);
     }
 
     /**
      * 轮询登录挑战结果
+     * <p>
+     * Token 在此签发（而非 WebSocket 批准时）：这是唯一能拿到真实 IP/UA、
+     * 也是唯一能由 Controller 写入 HttpOnly Cookie 的位置。
+     *
+     * @param clientIp  客户端 IP（用于登录日志与设备会话记录）
+     * @param userAgent 客户端 User-Agent
      */
-    public LoginPollResponse pollLoginResult(String challengeId) {
+    public LoginPollResponse pollLoginResult(String challengeId, String clientIp, String userAgent) {
         String resultKey = LOGIN_RESULT_PREFIX + challengeId;
         String result = redisTemplate.opsForValue().get(resultKey);
 
         LoginPollResponse response = new LoginPollResponse();
+        response.setChallengeId(challengeId);
 
         if (result == null) {
             // 挑战不存在或已过期
-            response.setStatus("expired");
+            response.setStatus(STATUS_EXPIRED);
             return response;
         }
 
-        if ("pending".equals(result)) {
-            response.setStatus("pending");
+        if (STATUS_PENDING.equals(result)) {
+            response.setStatus(STATUS_PENDING);
             return response;
         }
 
-        if ("rejected".equals(result)) {
-            // 清理数据
-            cleanupLoginChallenge(challengeId);
-            response.setStatus("rejected");
+        if (STATUS_REJECTED.equals(result)) {
+            // 不删结果：保持幂等，重复轮询仍得到 rejected，
+            // 否则第二次轮询会变成 expired 造成前端困惑
+            response.setStatus(STATUS_REJECTED);
             return response;
         }
 
-        // 格式: approved:{token}
-        if (result.startsWith("approved:")) {
-            String token = result.substring(9);
-            // 解析 token 获取用户信息
-            try {
-                Long userId = jwtUtil.getUserIdFromToken(token);
-                String username = jwtUtil.getUsernameFromToken(token);
-                User user = userMapper.selectById(userId);
-
-                if (user != null) {
-                    response.setToken(token);
-                    response.setUserId(user.getId());
-                    response.setNickname(user.getNickname());
-                    if (user.getAvatar() != null && !user.getAvatar().isEmpty()) {
-                        response.setAvatar("/api/users/avatar/" + user.getId());
-                    }
-                }
-            } catch (Exception e) {
-                log.error("解析登录挑战 Token 失败: challengeId={}", challengeId, e);
+        if (result.startsWith(APPROVED_VALUE_PREFIX)) {
+            // 原子消费：并发或重复轮询时只有一个请求能拿到令牌，
+            // 其余请求会看到 null 并落到 expired 分支（前端应在 approved 后立刻停止轮询）
+            String consumed = redisTemplate.opsForValue().getAndDelete(resultKey);
+            if (consumed == null || !consumed.startsWith(APPROVED_VALUE_PREFIX)) {
+                response.setStatus(STATUS_EXPIRED);
+                return response;
             }
 
-            response.setStatus("approved");
-
-            // 记录最后一次登录方式
+            Long userId;
             try {
-                Long userId = jwtUtil.getUserIdFromToken(token);
-                if (userId != null) {
-                    recordLastLoginMethod(userId, LoginMethod.AUTHENTICATOR_APP.getValue());
-                }
-            } catch (Exception e) {
-                log.warn("记录登录方式失败", e);
+                userId = Long.parseLong(consumed.substring(APPROVED_VALUE_PREFIX.length()));
+            } catch (NumberFormatException e) {
+                log.error("登录挑战结果格式异常: challengeId={}, result={}", challengeId, consumed);
+                response.setStatus(STATUS_EXPIRED);
+                return response;
             }
 
-            // 清理挑战数据（延迟清理，让前端能读到结果）
-            redisTemplate.delete(resultKey);
+            User user = userMapper.selectById(userId);
+            if (user == null || !user.getEnabled()) {
+                log.warn("登录挑战批准但用户不可用: challengeId={}, userId={}", challengeId, userId);
+                response.setStatus(STATUS_EXPIRED);
+                return response;
+            }
+
+            // 签发与 /api/auth2/token 完全一致的 Token（含 refresh_token 与 oauth2_authorization 落库）
+            OAuth2TokenResponse token = oAuth2TokenService.issueTokenForUser(
+                    user, LoginMethod.AUTHENTICATOR_APP.getValue(), clientIp, userAgent);
+
+            userService.updateLoginInfo(user, clientIp);
+            loginLogService.recordLoginSuccess(user.getId(), user.getUsername(), clientIp, userAgent);
+            recordLastLoginMethod(userId, LoginMethod.AUTHENTICATOR_APP.getValue());
             cleanupLoginChallenge(challengeId);
 
+            response.setStatus(STATUS_APPROVED);
+            response.setAccessToken(token.getAccessToken());
+            response.setRefreshToken(token.getRefreshToken());
+            response.setTokenType(token.getTokenType());
+            response.setExpiresIn(token.getExpiresIn());
+            response.setRefreshTokenExpiresIn(token.getRefreshTokenExpiresIn());
+            response.setUserId(user.getId());
+            response.setNickname(user.getNickname());
+            if (user.getAvatar() != null && !user.getAvatar().isEmpty()) {
+                response.setAvatar("/api/users/avatar/" + user.getId());
+            }
+
+            log.info("认证器登录成功: userId={}, challengeId={}, IP={}", userId, challengeId, clientIp);
             return response;
         }
 
@@ -411,6 +467,10 @@ public class LoginService {
 
     /**
      * 验证登录挑战（由 WebSocket 处理程序在 App 响应后调用）
+     * <p>
+     * 只做「校验 + 置状态」，<b>不签发 Token</b>：本方法运行在 WebSocket 线程里，
+     * 拿不到真实 IP/UA（RequestContextHolder 为空），也没有 HttpServletResponse。
+     * Token 由 {@link #pollLoginResult} 在 HTTP 线程里签发。
      *
      * @param challengeId    挑战 ID
      * @param userId         用户 ID
@@ -419,65 +479,53 @@ public class LoginService {
      */
     public LoginChallengeResult verifyLoginChallenge(String challengeId, Long userId, int selectedNumber) {
         String challengeKey = LOGIN_CHALLENGE_PREFIX + challengeId;
-        String storedData = redisTemplate.opsForValue().get(challengeKey);
+        Map<Object, Object> stored = redisTemplate.opsForHash().entries(challengeKey);
 
-        if (storedData == null) {
+        if (stored == null || stored.isEmpty()) {
             log.warn("登录挑战已过期: challengeId={}", challengeId);
             return LoginChallengeResult.expired();
         }
 
-        String[] parts = storedData.split(":");
-        if (parts.length != 2) {
+        String storedUserId = (String) stored.get(FIELD_USER_ID);
+        String storedCorrect = (String) stored.get(FIELD_CORRECT_NUMBER);
+        if (storedUserId == null || storedCorrect == null) {
             log.warn("登录挑战数据格式错误: challengeId={}", challengeId);
             return LoginChallengeResult.failed("数据异常");
         }
 
-        long storedUserId = Long.parseLong(parts[0]);
-        int correctNumber = Integer.parseInt(parts[1]);
-
-        if (storedUserId != userId) {
+        if (!String.valueOf(userId).equals(storedUserId)) {
             log.warn("登录挑战用户不匹配: challengeId={}, expectedUserId={}, actualUserId={}",
                     challengeId, storedUserId, userId);
             return LoginChallengeResult.failed("用户身份不匹配");
         }
 
-        if (selectedNumber == correctNumber) {
-            // 验证通过，生成 JWT Token
-            User user = userMapper.selectById(userId);
-            if (user == null) {
-                return LoginChallengeResult.failed("用户不存在");
-            }
+        // 先删挑战详情：一次性、防重放。放在写结果之前，
+        // 避免重复审批覆盖掉已经写入的 approved 状态
+        redisTemplate.delete(challengeKey);
+        redisTemplate.opsForSet().remove(LOGIN_PENDING_PREFIX + userId, challengeId);
 
-            String token = jwtUtil.generateToken(user.getId(), user.getUsername());
-
-            // 记录 Token 会话
-            String clientIp = getClientIpAddress();
-            String userAgent = getClientUserAgent();
-            tokenSessionService.recordSession(user.getId(), token, clientIp, userAgent, "Authenticator App");
-
-            // 更新登录信息
-            user.setLastLoginIp(clientIp);
-            user.setLastLoginTime(LocalDateTime.now());
-            user.setLoginCount(user.getLoginCount() != null ? user.getLoginCount() + 1 : 1);
-            userMapper.updateById(user);
-
-            // 存储验证结果
-            String resultKey = LOGIN_RESULT_PREFIX + challengeId;
-            redisTemplate.opsForValue().set(resultKey, "approved:" + token,
-                    LOGIN_CHALLENGE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-            log.info("登录挑战验证通过: challengeId={}, userId={}", challengeId, userId);
-            return LoginChallengeResult.approved(token);
-        } else {
-            // 验证失败
-            String resultKey = LOGIN_RESULT_PREFIX + challengeId;
-            redisTemplate.opsForValue().set(resultKey, "rejected",
-                    LOGIN_CHALLENGE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-            log.warn("登录挑战验证失败: challengeId={}, userId={}, selected={}, correct={}",
-                    challengeId, userId, selectedNumber, correctNumber);
-            return LoginChallengeResult.failed("数字选择错误");
+        int correctNumber;
+        try {
+            correctNumber = Integer.parseInt(storedCorrect);
+        } catch (NumberFormatException e) {
+            log.error("登录挑战正确答案异常: challengeId={}, value={}", challengeId, storedCorrect);
+            return LoginChallengeResult.failed("数据异常");
         }
+
+        String resultKey = LOGIN_RESULT_PREFIX + challengeId;
+
+        if (selectedNumber == correctNumber) {
+            redisTemplate.opsForValue().set(resultKey, APPROVED_VALUE_PREFIX + userId,
+                    LOGIN_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+            log.info("登录挑战验证通过: challengeId={}, userId={}", challengeId, userId);
+            return LoginChallengeResult.approved();
+        }
+
+        redisTemplate.opsForValue().set(resultKey, STATUS_REJECTED,
+                LOGIN_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+        log.warn("登录挑战验证失败: challengeId={}, userId={}, selected={}, correct={}",
+                challengeId, userId, selectedNumber, correctNumber);
+        return LoginChallengeResult.failed("数字选择错误");
     }
 
     /**
@@ -495,7 +543,7 @@ public class LoginService {
         for (String challengeId : challengeIds) {
             String resultKey = LOGIN_RESULT_PREFIX + challengeId;
             String result = redisTemplate.opsForValue().get(resultKey);
-            if ("pending".equals(result)) {
+            if (STATUS_PENDING.equals(result)) {
                 validIds.add(challengeId);
             }
         }
@@ -503,21 +551,40 @@ public class LoginService {
     }
 
     /**
-     * 获取登录挑战详情（供 WebSocket 推送）
+     * 获取登录挑战详情（供 WebSocket 推送用）
+     * <p>
+     * 从 Hash 还原 3 个候选数字 —— 之前这里构造的是空数组，
+     * 导致推给 App 的数字恒为占位符 0。
+     *
+     * @return 挑战详情；不存在或格式异常时返回 null
      */
     public LoginChallenge getLoginChallengeDetail(String challengeId) {
         String challengeKey = LOGIN_CHALLENGE_PREFIX + challengeId;
-        String data = redisTemplate.opsForValue().get(challengeKey);
-        if (data == null) {
+        Map<Object, Object> stored = redisTemplate.opsForHash().entries(challengeKey);
+        if (stored == null || stored.isEmpty()) {
             return null;
         }
 
-        String[] parts = data.split(":");
-        if (parts.length != 2) {
+        try {
+            Long userId = Long.parseLong((String) stored.get(FIELD_USER_ID));
+            int correctNumber = Integer.parseInt((String) stored.get(FIELD_CORRECT_NUMBER));
+            long expiresAt = Long.parseLong((String) stored.get(FIELD_EXPIRES_AT));
+
+            String rawNumbers = (String) stored.get(FIELD_NUMBERS);
+            int[] numbers = new int[0];
+            if (rawNumbers != null && !rawNumbers.isEmpty()) {
+                String[] parts = rawNumbers.split(",");
+                numbers = new int[parts.length];
+                for (int i = 0; i < parts.length; i++) {
+                    numbers[i] = Integer.parseInt(parts[i].trim());
+                }
+            }
+
+            return new LoginChallenge(challengeId, userId, numbers, correctNumber, expiresAt);
+        } catch (NumberFormatException | NullPointerException e) {
+            log.error("登录挑战数据解析失败: challengeId={}", challengeId, e);
             return null;
         }
-
-        return new LoginChallenge(challengeId, new int[0], Integer.parseInt(parts[1]), 0);
     }
 
     // ==================== 验证方式记忆 ====================
@@ -588,13 +655,17 @@ public class LoginService {
         }
     }
 
+    /**
+     * 清理登录挑战相关的 Redis 键
+     * <p>
+     * pending 集合的成员清理已在 {@link #verifyLoginChallenge} /
+     * {@link #invalidateUserLoginChallenges} 中完成（那里才知道 userId）；
+     * 未清理的残留成员会被 {@link #getUserPendingLoginChallengeIds} 按结果状态过滤掉，
+     * 且集合本身有 TTL 兜底。
+     */
     private void cleanupLoginChallenge(String challengeId) {
-        // 删除挑战相关的所有 key
         redisTemplate.delete(LOGIN_CHALLENGE_PREFIX + challengeId);
         redisTemplate.delete(LOGIN_RESULT_PREFIX + challengeId);
-
-        // 挑战 ID 是全局唯一的，且没有 userId 信息，所以无法精确从 user pending set 中删除
-        // 让 TTL 自动过期即可
     }
 
     private String getClientIpAddress() {
@@ -632,19 +703,6 @@ public class LoginService {
         return "unknown";
     }
 
-    private LoginResponse buildLoginResponse(User user, String token) {
-        LoginResponse response = new LoginResponse();
-        response.setToken(token);
-        response.setUserId(user.getId());
-        response.setNickname(user.getNickname());
-        if (user.getAvatar() != null && !user.getAvatar().isEmpty()) {
-            response.setAvatar("/api/users/avatar/" + user.getId());
-        } else {
-            response.setAvatar(null);
-        }
-        return response;
-    }
-
     // ==================== 内部类 ====================
 
     /**
@@ -652,54 +710,57 @@ public class LoginService {
      */
     public static class LoginChallenge {
         private final String challengeId;
+        private final Long userId;
         private final int[] numbers;
         private final int correctNumber;
         private final long expiresAt;
 
-        public LoginChallenge(String challengeId, int[] numbers, int correctNumber, long expiresAt) {
+        public LoginChallenge(String challengeId, Long userId, int[] numbers, int correctNumber, long expiresAt) {
             this.challengeId = challengeId;
+            this.userId = userId;
             this.numbers = numbers;
             this.correctNumber = correctNumber;
             this.expiresAt = expiresAt;
         }
 
         public String getChallengeId() { return challengeId; }
+        public Long getUserId() { return userId; }
         public int[] getNumbers() { return numbers; }
         public int getCorrectNumber() { return correctNumber; }
+        /** 过期时间，Unix 秒 */
         public long getExpiresAt() { return expiresAt; }
     }
 
     /**
      * 登录挑战验证结果
+     * <p>
+     * 不含 Token —— 批准只置状态，Token 由轮询时签发。
      */
     public static class LoginChallengeResult {
         private final boolean approved;
         private final boolean expired;
         private final String message;
-        private final String token;
 
-        private LoginChallengeResult(boolean approved, boolean expired, String message, String token) {
+        private LoginChallengeResult(boolean approved, boolean expired, String message) {
             this.approved = approved;
             this.expired = expired;
             this.message = message;
-            this.token = token;
         }
 
-        public static LoginChallengeResult approved(String token) {
-            return new LoginChallengeResult(true, false, "验证通过", token);
+        public static LoginChallengeResult approved() {
+            return new LoginChallengeResult(true, false, "验证通过");
         }
 
         public static LoginChallengeResult failed(String message) {
-            return new LoginChallengeResult(false, false, message, null);
+            return new LoginChallengeResult(false, false, message);
         }
 
         public static LoginChallengeResult expired() {
-            return new LoginChallengeResult(false, true, "挑战已过期", null);
+            return new LoginChallengeResult(false, true, "挑战已过期");
         }
 
         public boolean isApproved() { return approved; }
         public boolean isExpired() { return expired; }
         public String getMessage() { return message; }
-        public String getToken() { return token; }
     }
 }

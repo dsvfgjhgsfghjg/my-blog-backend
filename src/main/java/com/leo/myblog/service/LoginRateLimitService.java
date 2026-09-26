@@ -40,6 +40,11 @@ public class LoginRateLimitService {
     // IP级失败计数键前缀（独立于 username:ip）
     private static final String IP_FAILURES_KEY = "login:ip_failures:";
     private static final String IP_BANNED_KEY = "security:banned:";
+
+    // 登录挑战（认证器推送）限流：独立于密码失败计数
+    private static final String CHALLENGE_RATE_KEY = "login:challenge_rate:";
+    private static final int MAX_CHALLENGES_PER_WINDOW = 5;
+    private static final long CHALLENGE_RATE_WINDOW_SECONDS = 60;
     
     public LoginRateLimitService(RedisTemplate<String, String> redisTemplate,
                                   SystemConfigService systemConfigService,
@@ -227,5 +232,45 @@ public class LoginRateLimitService {
         String counterKey = "login:failures:" + username + ":" + ip;
         String count = redisTemplate.opsForValue().get(counterKey);
         return count != null ? Long.parseLong(count) : 0;
+    }
+
+    // ==================== 登录挑战限流（认证器推送） ====================
+
+    /**
+     * 检查是否允许发起登录挑战
+     * <p>
+     * 与密码失败计数<b>完全独立</b>：挑战是正常用户会反复点的操作（重试、切模式），
+     * 复用密码失败计数会把正常用户直接锁死。
+     * <p>
+     * 目的：压制推送轰炸 / MFA 疲劳攻击（攻击者反复触发推送骚扰用户）。
+     *
+     * @return true-允许，false-超出频率
+     */
+    public boolean isChallengeAllowed(String username, String ip) {
+        String counterKey = CHALLENGE_RATE_KEY + username + ":" + ip;
+        String count = redisTemplate.opsForValue().get(counterKey);
+        long current = count != null ? Long.parseLong(count) : 0;
+        return current < MAX_CHALLENGES_PER_WINDOW;
+    }
+
+    /**
+     * 记录一次登录挑战请求
+     */
+    public void recordChallengeRequest(String username, String ip) {
+        String counterKey = CHALLENGE_RATE_KEY + username + ":" + ip;
+        Long current = redisTemplate.opsForValue().increment(counterKey);
+        if (current != null && current == 1) {
+            redisTemplate.expire(counterKey, CHALLENGE_RATE_WINDOW_SECONDS, TimeUnit.SECONDS);
+        }
+        log.debug("记录登录挑战请求: username={}, ip={}, count={}", username, ip, current);
+    }
+
+    /**
+     * 获取挑战限流窗口的剩余时间（秒）
+     */
+    public long getChallengeRemainingWindow(String username, String ip) {
+        String counterKey = CHALLENGE_RATE_KEY + username + ":" + ip;
+        Long ttl = redisTemplate.getExpire(counterKey, TimeUnit.SECONDS);
+        return ttl != null && ttl > 0 ? ttl : 0;
     }
 }

@@ -390,27 +390,49 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
                 continue;
             }
 
-            // 获取设备名称
-            String deviceName = null;
-            com.leo.myblog.entity.AppDevice device = appAuthService.getUserDevices(userId).stream()
-                    .filter(d -> d.getDeviceId().equals(deviceId))
-                    .findFirst().orElse(null);
-            if (device != null) {
-                deviceName = device.getDeviceName();
-            }
-
-            // 构建挑战消息（包含 3 个数字）
-            String challengeMsg = String.format(
-                    "{\"type\":\"challenge\",\"challengeId\":\"%s\",\"numbers\":[%d,%d,%d],\"expiresAt\":%d,\"purpose\":\"login\"}",
-                    challengeId,
-                    0, 0, 0,  // 占位符，实际 numbers 需要从登录挑战中获取
-                    System.currentTimeMillis() / 1000 + 60
-            );
-
-            // 加密后发送
-            sendEncryptedMessage(session, challengeMsg);
-            log.info("推送待处理登录挑战: challengeId={}, userId={}, deviceId={}", challengeId, userId, deviceId);
+            sendEncryptedMessage(session, buildLoginChallengeMessage(challengeDetail));
+            log.info("补推待处理登录挑战: challengeId={}, userId={}, deviceId={}", challengeId, userId, deviceId);
         }
+    }
+
+    /**
+     * 推送两步登录挑战
+     * <p>
+     * 供 LoginController 在用户点击「使用我的认证器登录」后调用。
+     * 注意：主动推送必须由 Controller 发起 —— 本类反向依赖了 LoginService，
+     * 若让 LoginService 注入本类会形成循环依赖。
+     *
+     * @param session   App 的 WebSocket 会话
+     * @param challenge 登录挑战详情
+     */
+    public void pushLoginChallenge(WebSocketSession session, LoginService.LoginChallenge challenge) throws IOException {
+        sendEncryptedMessage(session, buildLoginChallengeMessage(challenge));
+        log.info("推送登录挑战: challengeId={}, userId={}, deviceId={}",
+                challenge.getChallengeId(), challenge.getUserId(),
+                sessionManager.getDeviceIdBySessionId(session.getId()));
+    }
+
+    /**
+     * 构建登录挑战消息
+     * <p>
+     * 消息结构与敏感操作挑战（{@link #pushChallengeToUser}）完全一致，App 端无需改动。
+     * <p>
+     * <b>严禁把 correctNumber 放进消息</b>：数字匹配的安全性来自「App 只知道 3 个候选，
+     * 由用户从网页上读出正确数字」；一旦下发正确答案，这个机制就退化成了 1/3 概率的盲猜。
+     * <p>
+     * 包级可见以便单元测试（{@code ChallengeRoutingTest}）直接断言消息内容。
+     */
+    String buildLoginChallengeMessage(LoginService.LoginChallenge challenge) {
+        int[] numbers = challenge.getNumbers();
+        // expiresAt 为 Unix 秒，App 端会做 expiresAt * 1000（见 ChallengeDialogFragment）
+        return String.format(
+                "{\"type\":\"challenge\",\"challengeId\":\"%s\",\"numbers\":[%d,%d,%d],\"expiresAt\":%d}",
+                challenge.getChallengeId(),
+                numbers.length > 0 ? numbers[0] : 0,
+                numbers.length > 1 ? numbers[1] : 0,
+                numbers.length > 2 ? numbers[2] : 0,
+                challenge.getExpiresAt()
+        );
     }
 
     /**
@@ -568,36 +590,86 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // 验证挑战
-        AppAuthService.ChallengeResult result = appAuthService.verifyChallenge(challengeId, selectedNumber, userId);
+        // 路由到正确的验证器：登录挑战与敏感操作挑战使用不同的 Redis 命名空间
+        ChallengeOutcome outcome = resolveChallenge(userId, challengeId, selectedNumber);
 
-        // 更新认证历史记录
-        if (result.isApproved()) {
-            appAuthService.updateChallengeResult(challengeId, "approved");
-        } else if (result.isExpired()) {
-            appAuthService.updateChallengeResult(challengeId, "expired");
-        } else {
-            appAuthService.updateChallengeResult(challengeId, "rejected");
+        // 更新认证历史记录（仅敏感操作挑战会落 auth_history；
+        // 登录挑战的结果由 LoginService 自己维护在 login_result 键里）
+        if (!outcome.isLoginChallenge()) {
+            if (outcome.isApproved()) {
+                appAuthService.updateChallengeResult(challengeId, "approved");
+            } else if (outcome.isExpired()) {
+                appAuthService.updateChallengeResult(challengeId, "expired");
+            } else {
+                appAuthService.updateChallengeResult(challengeId, "rejected");
+            }
         }
 
         // 构建结果消息
         String resultMsg;
-        if (result.isApproved()) {
+        if (outcome.isApproved()) {
             resultMsg = "{\"type\":\"auth_result\",\"status\":\"approved\"}";
-        } else if (result.isExpired()) {
-            resultMsg = "{\"type\":\"auth_result\",\"status\":\"expired\",\"reason\":\"" + result.getMessage() + "\"}";
+        } else if (outcome.isExpired()) {
+            resultMsg = "{\"type\":\"auth_result\",\"status\":\"expired\",\"reason\":\"" + outcome.getMessage() + "\"}";
         } else {
-            resultMsg = "{\"type\":\"auth_result\",\"status\":\"rejected\",\"reason\":\"" + result.getMessage() + "\"}";
-
+            resultMsg = "{\"type\":\"auth_result\",\"status\":\"rejected\",\"reason\":\"" + outcome.getMessage() + "\"}";
         }
 
         // 加密后发送
         sendEncryptedMessage(session, resultMsg);
 
-        log.info("挑战结果: challengeId={}, deviceId={}, approved={}", challengeId, deviceId, result.isApproved());
+        log.info("挑战结果: challengeId={}, deviceId={}, loginChallenge={}, approved={}",
+                challengeId, deviceId, outcome.isLoginChallenge(), outcome.isApproved());
 
         // 更新设备活跃时间
         appAuthService.updateDeviceActivity(deviceId);
+    }
+
+    /**
+     * 按 Redis 命名空间把挑战应答路由到对应的验证器
+     * <p>
+     * 登录挑战存在 {@code app:auth:login_challenge:}，敏感操作存在 {@code app:auth:challenge:}。
+     * 之前这里无条件调用 {@code appAuthService.verifyChallenge}，导致登录挑战
+     * （存在另一个命名空间）永远验不过 —— 这是认证器登录链路根本跑不通的原因之一。
+     * <p>
+     * 抽成独立方法是为了让这段路由逻辑能够脱离 WebSocket 传输被单元测试覆盖。
+     * <p>
+     * 边界：挑战详情有 60s TTL，过期后此方法会回落到敏感操作分支并得到「挑战已过期」，
+     * 语义正确。
+     */
+    ChallengeOutcome resolveChallenge(Long userId, String challengeId, int selectedNumber) {
+        if (loginService.getLoginChallengeDetail(challengeId) != null) {
+            LoginService.LoginChallengeResult result =
+                    loginService.verifyLoginChallenge(challengeId, userId, selectedNumber);
+            return new ChallengeOutcome(true, result.isApproved(), result.isExpired(), result.getMessage());
+        }
+
+        AppAuthService.ChallengeResult result =
+                appAuthService.verifyChallenge(challengeId, selectedNumber, userId);
+        return new ChallengeOutcome(false, result.isApproved(), result.isExpired(), result.getMessage());
+    }
+
+    /**
+     * 挑战应答的处理结果
+     */
+    static class ChallengeOutcome {
+        private final boolean loginChallenge;
+        private final boolean approved;
+        private final boolean expired;
+        private final String message;
+
+        ChallengeOutcome(boolean loginChallenge, boolean approved, boolean expired, String message) {
+            this.loginChallenge = loginChallenge;
+            this.approved = approved;
+            this.expired = expired;
+            this.message = message;
+        }
+
+        /** 是否属于两步登录挑战（决定是否写 auth_history） */
+        public boolean isLoginChallenge() { return loginChallenge; }
+        public boolean isApproved() { return approved; }
+        public boolean isExpired() { return expired; }
+        public String getMessage() { return message; }
     }
 
     /**

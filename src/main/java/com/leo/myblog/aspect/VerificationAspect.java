@@ -173,11 +173,13 @@ public class VerificationAspect {
 
         log.debug("检查挑战推送验证结果: userId={}, challengeId={}", userId, challengeId);
 
-        // 检查登录挑战结果
-        com.leo.myblog.dto.response.LoginPollResponse pollResult =
-                loginService.pollLoginResult(challengeId);
+        // 从 auth_history 读取敏感操作挑战的权威结果。
+        // 早前这里读的是登录挑战的 Redis 命名空间（app:auth:login_result:），
+        // 与敏感操作的结果存储（auth_history 表）对不上，导致该分支恒为「挑战已过期」、
+        // 整个挑战推送验证形同虚设。改用与 VerificationController.check-push 一致的权威数据源。
+        String status = appAuthService.getChallengeStatus(challengeId, userId);
 
-        if ("approved".equals(pollResult.getStatus())) {
+        if ("approved".equals(status)) {
             // 验证成功，创建会话
             totpSessionService.createSession(userId);
             loginService.recordLastVerifyMethod(userId, "challenge_push");
@@ -194,12 +196,19 @@ public class VerificationAspect {
             return joinPoint.proceed();
         }
 
-        if ("rejected".equals(pollResult.getStatus())) {
+        if ("rejected".equals(status)) {
             throw new BusinessException(401, "App 验证已拒绝");
         }
 
-        if ("expired".equals(pollResult.getStatus())) {
+        if ("expired".equals(status)) {
             throw new BusinessException(401, "验证挑战已过期，请重新发送");
+        }
+
+        if (status == null) {
+            // 不属于该用户的任何挑战：可能伪造的 challengeId，
+            // 也可能是登录挑战的 ID（登录挑战不能被用来满足敏感操作验证）
+            log.warn("挑战 ID 不属于该用户的敏感操作挑战: userId={}, challengeId={}", userId, challengeId);
+            throw new BusinessException(401, "验证挑战无效，请重新发送");
         }
 
         // pending 状态

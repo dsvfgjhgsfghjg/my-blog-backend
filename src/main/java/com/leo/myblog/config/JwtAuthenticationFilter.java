@@ -34,6 +34,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String[] PUBLIC_PATHS = {
         "/api/users/login",
         "/api/users/register",
+        // 两步登录：必须跳过，否则浏览器里存有失效 AUTH_TOKEN Cookie 时，
+        // 本过滤器会取到该 token、校验失败并返回 403「登录信息已经失效」，
+        // 用户将连登录页都提交不了。与 /api/users/login 列入本清单同理。
+        "/api/auth/login/",
         "/api/captcha/",
         "/actuator/health",
         "/api/audio/stream/",

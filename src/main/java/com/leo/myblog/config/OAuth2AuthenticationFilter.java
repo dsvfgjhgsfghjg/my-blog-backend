@@ -58,6 +58,11 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
     private static final String[] OTHER_PUBLIC_PATHS = {
         "/api/users/login",
         "/api/users/register",
+        // 两步登录：必须跳过，否则浏览器里存有失效 AUTH_TOKEN Cookie 时，
+        // 过滤器会取到该 token、校验失败并直接返回 403「登录信息已经失效」，
+        // 导致用户连登录页都提交不了（前端 403 处理还会把他重定向回 /login，形成死循环）。
+        // 与 /api/users/login、/api/auth2/token 被列入本清单是同一个原因。
+        "/api/auth/login/",
         "/api/captcha/",
         "/actuator/health",
         "/api/images/stream/",

@@ -218,10 +218,32 @@ public class VerificationController {
 
     /**
      * 检查登录挑战结果
+     * <p>
+     * 注意：这是「登录挑战」的结果查询，与 {@code /check-push} 的敏感操作挑战无关。
+     * 本接口会消费掉挑战并在 approved 时签发 Token（见 LoginService.pollLoginResult），
+     * 因此只应被发起登录的那个浏览器调用。
      */
     @GetMapping("/check-login-result/{challengeId}")
-    public Result<LoginPollResponse> checkLoginResult(@PathVariable String challengeId) {
-        LoginPollResponse pollResult = loginService.pollLoginResult(challengeId);
+    public Result<LoginPollResponse> checkLoginResult(@PathVariable String challengeId,
+                                                       jakarta.servlet.http.HttpServletRequest httpRequest) {
+        LoginPollResponse pollResult = loginService.pollLoginResult(
+                challengeId,
+                getClientIp(httpRequest),
+                httpRequest.getHeader("User-Agent"));
         return Result.success(pollResult);
+    }
+
+    private String getClientIp(jakarta.servlet.http.HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Real-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        return ip != null ? ip : "unknown";
     }
 }
