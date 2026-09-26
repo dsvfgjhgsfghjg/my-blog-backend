@@ -68,4 +68,12 @@ public class AuthHistory {
      * 用户响应时间
      */
     private LocalDateTime respondedAt;
+
+    /**
+     * 被敏感操作消费的时间
+     * <p>
+     * NULL 表示尚未使用（可用于验证）；非 NULL 表示已被某次敏感操作消费，
+     * 不可再次用于验证。见 {@code AppAuthService.consumeApprovedChallenge}。
+     */
+    private LocalDateTime usedAt;
 }

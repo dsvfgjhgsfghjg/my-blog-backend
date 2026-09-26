@@ -177,24 +177,10 @@ public class VerificationAspect {
         // 早前这里读的是登录挑战的 Redis 命名空间（app:auth:login_result:），
         // 与敏感操作的结果存储（auth_history 表）对不上，导致该分支恒为「挑战已过期」、
         // 整个挑战推送验证形同虚设。改用与 VerificationController.check-push 一致的权威数据源。
+        //
+        // 注意：状态读取只用来给出准确的失败原因，是否放行由下面的「一次性消费」决定 ——
+        // approved 是持久化的历史状态，直接拿它放行等于允许同一条记录被反复重放。
         String status = appAuthService.getChallengeStatus(challengeId, userId);
-
-        if ("approved".equals(status)) {
-            // 验证成功，创建会话
-            totpSessionService.createSession(userId);
-            loginService.recordLastVerifyMethod(userId, "challenge_push");
-
-            log.info("挑战推送验证成功: userId={}, operation={}",
-                    userId, getOperationDescription(joinPoint));
-
-            try {
-                attributes.getResponse().setHeader("X-TOTP-Session", "valid");
-            } catch (Exception e) {
-                log.warn("设置响应头失败", e);
-            }
-
-            return joinPoint.proceed();
-        }
 
         if ("rejected".equals(status)) {
             throw new BusinessException(401, "App 验证已拒绝");
@@ -211,8 +197,32 @@ public class VerificationAspect {
             throw new BusinessException(401, "验证挑战无效，请重新发送");
         }
 
-        // pending 状态
-        throw new BusinessException(401, "请在 App 上完成验证");
+        if ("pending".equals(status)) {
+            throw new BusinessException(401, "请在 App 上完成验证");
+        }
+
+        // 一次性消费：只接受未被使用过、且在时效窗口内被批准的挑战。
+        // 条件更新（used_at IS NULL → 置位）本身即并发门闩，同一行只有一个请求能消费成功。
+        if (!appAuthService.consumeApprovedChallenge(userId, challengeId)) {
+            log.warn("挑战推送验证未通过（已被使用或超出时效窗口）: userId={}, challengeId={}",
+                    userId, challengeId);
+            throw new BusinessException(401, "验证挑战已失效，请重新发送");
+        }
+
+        // 验证成功，创建会话
+        totpSessionService.createSession(userId);
+        loginService.recordLastVerifyMethod(userId, "challenge_push");
+
+        log.info("挑战推送验证成功: userId={}, operation={}",
+                userId, getOperationDescription(joinPoint));
+
+        try {
+            attributes.getResponse().setHeader("X-TOTP-Session", "valid");
+        } catch (Exception e) {
+            log.warn("设置响应头失败", e);
+        }
+
+        return joinPoint.proceed();
     }
 
     private Long getCurrentUserId() {

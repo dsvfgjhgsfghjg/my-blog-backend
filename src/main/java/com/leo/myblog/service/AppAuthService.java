@@ -1,6 +1,7 @@
 package com.leo.myblog.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.leo.myblog.dto.response.AuthHistoryResponse;
 import com.leo.myblog.dto.response.CipherInfoResponse;
@@ -69,6 +70,14 @@ public class AppAuthService {
     private static final int MAX_CHALLENGES_PER_MINUTE = 10;  // 每分钟最大挑战生成次数
     private static final long CHALLENGE_RATE_WINDOW = 60;     // 挑战频率窗口（秒）
     private static final int MAX_DEVICES_PER_USER = 5;          // 每个用户最大绑定设备数
+    // 敏感操作挑战的消费时效：只接受该时长内被 App 批准的挑战。
+    // 挑战本身 60 秒过期（CHALLENGE_TIMEOUT_SECONDS），批准必然发生在窗口内；
+    // 这里给 5 分钟是为了吸收前端轮询与人工操作的延迟，同时保证「历史 approved
+    // 记录」不会被翻出来重放。取 5 分钟与 TOTP 会话时长一致。
+    private static final long CHALLENGE_CONSUME_WINDOW_MINUTES = 5;
+
+    // 挑战状态（与 t_auth_history.status 的取值一致）
+    private static final String STATUS_APPROVED = "approved";
 
     private final BCryptPasswordEncoder secretEncoder = new BCryptPasswordEncoder();
 
@@ -961,6 +970,44 @@ public class AppAuthService {
                 .eq(AuthHistory::getUserId, userId);
         AuthHistory history = authHistoryMapper.selectOne(wrapper);
         return history != null ? history.getStatus() : null;
+    }
+
+    /**
+     * 消费一条已被 App 批准的敏感操作挑战（一次性）
+     * <p>
+     * 条件更新即并发门闩：{@code used_at IS NULL} 保证同一行只会被一个请求消费成功，
+     * 其余并发请求更新行数为 0。同时要求挑战在时效窗口内被响应，避免把历史的
+     * approved 记录翻出来重放。
+     *
+     * @param userId      用户 ID
+     * @param challengeId 挑战 ID
+     * @return true=本次调用消费成功（可用于验证）；false=挑战不存在、已拒绝、已过期、
+     * 已被消费过或超出时效窗口
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean consumeApprovedChallenge(Long userId, String challengeId) {
+        if (userId == null || challengeId == null || challengeId.trim().isEmpty()) {
+            return false;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LambdaUpdateWrapper<AuthHistory> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(AuthHistory::getChallengeId, challengeId)
+                .eq(AuthHistory::getUserId, userId)
+                .eq(AuthHistory::getStatus, STATUS_APPROVED)
+                .isNull(AuthHistory::getUsedAt)
+                .ge(AuthHistory::getRespondedAt, now.minusMinutes(CHALLENGE_CONSUME_WINDOW_MINUTES))
+                .set(AuthHistory::getUsedAt, now);
+
+        int updated = authHistoryMapper.update(null, wrapper);
+        if (updated == 1) {
+            log.info("敏感操作挑战已消费: userId={}, challengeId={}", userId, challengeId);
+            return true;
+        }
+
+        log.warn("敏感操作挑战消费失败（不存在/已拒绝/已过期/已使用/超出 {} 分钟窗口）: userId={}, challengeId={}",
+                CHALLENGE_CONSUME_WINDOW_MINUTES, userId, challengeId);
+        return false;
     }
 
     /**
