@@ -30,6 +30,9 @@ public class AuditLevelResolverTest {
                 Map.entry(AuditAction.TOGGLE_STATUS, AuditLevel.WARNING),
                 Map.entry(AuditAction.CLEANUP, AuditLevel.WARNING),
                 Map.entry(AuditAction.UNBAN_IP, AuditLevel.WARNING),
+                // 改配置与重置配置同级：配置里有 TOTP 开关之类安全项，改错就等于关防护
+                Map.entry(AuditAction.UPDATE_CONFIG, AuditLevel.WARNING),
+                Map.entry(AuditAction.RESET_CONFIG, AuditLevel.WARNING),
                 Map.entry(AuditAction.RESET_PASSWORD, AuditLevel.CRITICAL),
                 Map.entry(AuditAction.CHANGE_ROLE, AuditLevel.CRITICAL),
                 Map.entry(AuditAction.SET_SUPER_ADMIN, AuditLevel.CRITICAL),
@@ -87,6 +90,20 @@ public class AuditLevelResolverTest {
         assertEquals(AuditLevel.NOTICE, AuditLevel.from(null));
         assertEquals(AuditLevel.NOTICE, AuditLevel.from("不存在的等级"));
         assertEquals(AuditLevel.CRITICAL, AuditLevel.from(" CRITICAL "));
+    }
+
+    @Test
+    @DisplayName("严格校验：筛选用它，避免 WARN 这类拼错的值被静默当成 NOTICE")
+    void strictValidation() {
+        assertEquals(true, AuditLevel.isValid("WARNING"));
+        assertEquals(true, AuditLevel.isValid("warning"));
+        assertEquals(true, AuditLevel.isValid(" CRITICAL "));
+
+        assertEquals(false, AuditLevel.isValid("WARN"), "缩写不是合法值");
+        assertEquals(true, AuditLevel.isValid("INFO "), "首尾空格会被 trim，仍算合法");
+        assertEquals(false, AuditLevel.isValid(""));
+        assertEquals(false, AuditLevel.isValid(null));
+        assertEquals(false, AuditLevel.isValid("严重"));
     }
 
     @Test

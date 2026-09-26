@@ -4,6 +4,22 @@
 
 ---
 
+## ⚠️ 状态说明（2026-09-26 核对）
+
+本文是 **2026-05-14「设备信息展示」这次改造的记录**，不是审计日志的最新全貌。
+最新的现状说明以 [AUDIT_LOG_SYSTEM.md](AUDIT_LOG_SYSTEM.md) 为准。
+
+| 部分 | 状态 |
+|---|---|
+| 设备字段（`deviceType`/`osName`/`browserName`）、空值转 `N/A`、`N/A` 展示约定 | ✅ 仍有效 |
+| `responseStatus` 的含义 | ❌ 已变：现在是**业务返回码**，不再是 HTTP 状态码（下方示例中的 `401` 属旧语义） |
+| `extraData` 的内容 | ❌ 已变：**不再包含整串 `userAgent`**（`user_agent` 列已有），另外新增了 `androidRemark`/`androidDescription` |
+| 「密码脱敏」相关描述 | ❌ 已重写：原先只按形参名判断、实际完全失效，现由 `AuditParamSanitizer` 递归按字段名打码 |
+| 请求参数记录范围 | ⚠️ 已扩大/收缩：新增「等级」维度、`@RequireTotp` 接口纳入审计、`LoginController.pollResult` 刻意排除 |
+| 下方「🔮 未来优化」 | ⏳ 仍是**设想**，尚未落地 |
+
+---
+
 ## 🎯 功能概述
 
 本次更新增强了审计日志系统的显示字段，主要改进包括：
@@ -25,8 +41,11 @@
 | `osName` | String | 操作系统名称 | Windows 10 / macOS / Linux / N/A |
 | `browserName` | String | 浏览器/客户端名称 | Chrome / Firefox / Safari / N/A |
 | `userAgent` | String | 完整User-Agent字符串 | Mozilla/5.0... |
-| `requestParams` | String | 请求参数（JSON） | {"username":"admin"} |
-| `extraData` | String | 额外数据（JSON） | 包含设备信息等 |
+| `requestParams` | String | 请求参数（JSON，已脱敏） | {"username":"admin"} |
+| `extraData` | String | 额外数据（JSON） | 仅含解析后的设备信息，**不含** `userAgent` |
+
+> 2026-09 起 `AuditLogResponse` 还多了 `level`（等级）与 `responseMessage`（响应消息），
+> 见 [AUDIT_LOG_SYSTEM.md](AUDIT_LOG_SYSTEM.md)。
 
 ### 空值处理规则
 
@@ -429,24 +448,36 @@ spring:
 
 ### 2. 设备信息记录
 
-在 `AuditLogAspect` 中，登录操作会自动记录设备信息到 `extraData`：
+在 `AuditLogAspect` 中，登录操作会自动记录设备信息到 `extraData`。
+注意 `userAgent` **不再写进 `extraData`**（`user_agent` 列已有，重复写会让每行膨胀一倍），
+且写库前会统一过一遍脱敏：
 
 ```java
-// 如果是登录操作，添加设备信息到extraData
-if ("LOGIN".equals(auditLog.getOperationType()) && request != null) {
-    try {
-        Map<String, String> deviceInfo = new HashMap<>();
-        String userAgent = request.getHeader("User-Agent");
-        if (userAgent != null) {
-            deviceInfo.put("userAgent", userAgent);
-            deviceInfo.put("deviceType", parseDeviceType(userAgent));
-            deviceInfo.put("osName", parseOsName(userAgent));
-            deviceInfo.put("browserName", parseBrowserName(userAgent));
-        }
-        auditLog.setExtraData(objectMapper.writeValueAsString(deviceInfo));
-    } catch (Exception e) {
-        log.warn("序列化设备信息失败", e);
+/** 只有登录类操作才需要设备信息 */
+private boolean isDeviceInfoRelevant(AuditLog auditLog) {
+    return "LOGIN".equals(auditLog.getOperationType());
+}
+
+private String buildDeviceInfo(HttpServletRequest request) {
+    String userAgent = request.getHeader("User-Agent");
+    if (userAgent == null || userAgent.isEmpty()) {
+        return null;
     }
+    Map<String, String> deviceInfo = new HashMap<>();
+    UserAgentParser.DeviceInfo parsedInfo = userAgentParser.parseUserAgent(userAgent);
+    deviceInfo.put("deviceType", parsedInfo.getDeviceType());
+    deviceInfo.put("osName", parsedInfo.getOsName());
+    deviceInfo.put("browserName", parsedInfo.getBrowserName());
+
+    if ("Android".equals(parsedInfo.getOsName())) {
+        AndroidUaDetector.AndroidDeviceInfo androidInfo = androidUaDetector.detect(userAgent);
+        if (androidInfo != null) {
+            deviceInfo.put("androidRemark", androidInfo.getRemark());
+            deviceInfo.put("androidDescription", androidInfo.getDescription());
+        }
+    }
+    // 统一过一遍脱敏，防止将来有人往这里塞凭据
+    return objectMapper.writeValueAsString(paramSanitizer.mask(objectMapper.valueToTree(deviceInfo)));
 }
 ```
 
@@ -455,6 +486,9 @@ if ("LOGIN".equals(auditLog.getOperationType()) && request != null) {
 ## 📊 数据统计
 
 ### 字段覆盖率统计
+
+> 下表是 2026-05-14 当时的**估算值**，非实时统计。要准确的分布请查
+> `GET /api/system/audit-logs/stats`（`moduleStats`/`levelStats`）。
 
 | 字段 | 有值比例 | N/A比例 | 说明 |
 |------|---------|---------|------|
@@ -469,6 +503,8 @@ if ("LOGIN".equals(auditLog.getOperationType()) && request != null) {
 
 ## 🔮 未来优化
 
+> 以下均为**设想**，尚未实现（2026-09-26 核对）。
+
 1. **实时设备识别** - 集成更精准的UA解析库（如ua-parser）
 2. **地理位置追踪** - 根据IP地址显示登录地点
 3. **异常检测告警** - 异地登录、新设备登录自动告警
@@ -478,5 +514,5 @@ if ("LOGIN".equals(auditLog.getOperationType()) && request != null) {
 ---
 
 **维护者**: Leo  
-**最后更新**: 2026-05-14  
+**最后更新**: 2026-05-14（内容）/ 2026-09-26（加状态说明并修正已失效之处）  
 **版本**: v1.1.0

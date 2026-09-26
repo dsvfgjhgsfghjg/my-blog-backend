@@ -77,8 +77,12 @@ public class AuditLogService {
             wrapper.eq(AuditLog::getModule, request.getModule());
         }
 
-        // 按等级筛选
+        // 按等级筛选。这里刻意用严格校验而不是 AuditLevel.from 的宽松回退 ——
+        // 后者会把 WARN 这种拼错的值当成 NOTICE，静默查出一堆 NOTICE 行，看着像筛选生效了。
         if (request.getLevel() != null && !request.getLevel().isEmpty()) {
+            if (!AuditLevel.isValid(request.getLevel())) {
+                throw new BusinessException("无效的日志等级: " + request.getLevel());
+            }
             wrapper.eq(AuditLog::getLevel, AuditLevel.from(request.getLevel()).getValue());
         }
         

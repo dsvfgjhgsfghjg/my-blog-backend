@@ -68,4 +68,22 @@ public enum AuditLevel {
             return NOTICE;
         }
     }
+
+    /**
+     * 严格判断是否是合法等级值
+     * <p>
+     * 用于「按等级筛选」这类场景：那里不能用宽松解析 —— 传 {@code WARN} 这种拼错的值会被
+     * 静默当成 NOTICE，于是查出一堆 NOTICE 行，看起来像筛选生效了，实际是错的。
+     */
+    public static boolean isValid(String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        try {
+            valueOf(name.trim().toUpperCase());
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
 }

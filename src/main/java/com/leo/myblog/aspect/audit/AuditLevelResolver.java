@@ -36,7 +36,10 @@ public final class AuditLevelResolver {
     private static final Set<String> WARNING_ACTIONS = Set.of(
             AuditAction.DELETE, AuditAction.TOGGLE_STATUS, AuditAction.REVOKE,
             AuditAction.REVOKE_SESSION, AuditAction.UNBAN_IP, AuditAction.MIGRATE,
-            AuditAction.CLEANUP, AuditAction.RESET_CONFIG);
+            AuditAction.CLEANUP, AuditAction.RESET_CONFIG,
+            // 改配置与重置配置风险相当：配置里包含 TOTP 开关之类的安全项，
+            // 改错一个键就等于关掉一层防护。不能靠"未登记回退 NOTICE"碰巧得到记录级。
+            AuditAction.UPDATE_CONFIG);
 
     /** 权限/身份的授予或剥夺、凭据重置、封禁 */
     private static final Set<String> CRITICAL_ACTIONS = Set.of(

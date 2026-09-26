@@ -119,7 +119,8 @@ public class AuditMetadataResolverTest {
 
         assertEquals("修改配置 site.title", meta.description());
         assertEquals(AuditModule.SYSTEM, meta.module());
-        assertEquals(AuditLevel.NOTICE, meta.baseLevel(), "改配置是普通写操作（记录级）");
+        assertEquals(AuditLevel.WARNING, meta.baseLevel(),
+                "改配置与重置配置同级（警告）：配置里有 TOTP 开关之类安全项");
     }
 
     @Test
