@@ -63,8 +63,10 @@ public class ChallengeConsumeTest {
                 )
                 """);
 
-        jdbcTemplate.update("DELETE FROM t_auth_history");
-        jdbcTemplate.update("DELETE FROM t_user");
+        // 只清理本测试自己造的数据。不要写成无条件的 DELETE FROM t_user ——
+        // 万一这个测试被指向真实数据库，那会清空整张用户表。
+        jdbcTemplate.update("DELETE FROM t_auth_history WHERE user_id IN (?, ?)", USER_ID, OTHER_USER_ID);
+        jdbcTemplate.update("DELETE FROM t_user WHERE id IN (?, ?)", USER_ID, OTHER_USER_ID);
         for (Long id : new Long[]{USER_ID, OTHER_USER_ID}) {
             jdbcTemplate.update("INSERT INTO t_user (id, username, password) VALUES (?, ?, ?)",
                     id, "consume-test-" + id, "x");
