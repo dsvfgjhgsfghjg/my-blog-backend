@@ -161,6 +161,11 @@ public class SecurityConfig {
 
                 // OAuth2 认证公开接口
                 .requestMatchers("/api/auth2/token").permitAll()           // OAuth2 颁发 Token
+                // 刷新与撤销各自以 refresh_token / 待撤销的 token 本身作为凭证，
+                // 不能要求先有有效的 access_token —— 那正是这两个端点要解决的问题
+                // （access_token 过期时才需要刷新；Cookie 里的 token 失效时仍要能登出并清 Cookie）
+                .requestMatchers("/api/auth2/token/refresh").permitAll()   // 刷新 Token
+                .requestMatchers("/api/auth2/token/revoke").permitAll()    // 撤销 Token（登出）
                 .requestMatchers("/api/auth2/oauth/login").permitAll()     // 第三方登录入口
                 .requestMatchers("/api/auth2/oauth/callback").permitAll()  // 第三方登录回调
 

@@ -4,6 +4,7 @@ import com.leo.myblog.common.Result;
 import com.leo.myblog.config.CookieSecurityConfig;
 import com.leo.myblog.dto.request.OAuth2TokenRequest;
 import com.leo.myblog.dto.request.ThirdPartyLoginRequest;
+import com.leo.myblog.dto.response.AbilityResponse;
 import com.leo.myblog.dto.response.OAuth2TokenResponse;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.exception.BusinessException;
@@ -18,7 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * OAuth 2.0 认证控制器
@@ -46,6 +49,7 @@ public class OAuth2Controller {
     private final JwtUtil jwtUtil;
     private final UserCacheService userCacheService;
     private final CookieSecurityConfig cookieSecurityConfig;
+    private final AbilityService abilityService;
 
     @Value("${jwt.cookie.expose-token-in-body:true}")
     private boolean exposeTokenInBody;
@@ -115,18 +119,28 @@ public class OAuth2Controller {
     }
 
     /**
-     * 撤销 Token
+     * 撤销 Token（登出）
+     * <p>
+     * access_token 可放在请求体，也可省略 —— 省略时从 HttpOnly Cookie 中取。
+     * Cookie 模式下前端读不到 access_token，因此不接受"没带 token 就报错"，
+     * 否则每次登出都会失败且 Cookie 无法被清除。
      */
     @PostMapping("/token/revoke")
-    public Result<Void> revokeToken(@RequestBody Map<String, String> body,
+    public Result<Void> revokeToken(@RequestBody(required = false) Map<String, String> body,
+                                     HttpServletRequest request,
                                      HttpServletResponse httpResponse) {
-        String accessToken = body.get("access_token");
+        String accessToken = body != null ? body.get("access_token") : null;
         if (accessToken == null || accessToken.trim().isEmpty()) {
-            return Result.error(400, "access_token 不能为空");
+            // 兜底：从 Cookie / Authorization 头取
+            accessToken = extractBearerToken(request);
         }
 
-        log.info("OAuth2 撤销 Token 请求");
-        oAuth2TokenService.revokeToken(accessToken);
+        if (accessToken == null || accessToken.trim().isEmpty()) {
+            log.info("OAuth2 登出请求：未携带 access_token，仅清除 Cookie");
+        } else {
+            log.info("OAuth2 撤销 Token 请求");
+            oAuth2TokenService.revokeToken(accessToken);
+        }
 
         // 清除 HttpOnly Cookie
         Cookie clearCookie = cookieSecurityConfig.createClearCookie();
@@ -220,13 +234,19 @@ public class OAuth2Controller {
                 return Result.error(404, "用户不存在");
             }
 
+            // 能力列表（仅能力名，供前端 hasAbility() 判断；管理员由 is_admin 短路，不依赖此列表）
+            List<String> abilities = abilityService.getUserAbilities(userId).stream()
+                    .map(AbilityResponse::getName)
+                    .collect(Collectors.toList());
+
             Map<String, Object> userInfo = Map.of(
                     "user_id", user.getId(),
                     "username", user.getUsername(),
                     "nickname", user.getNickname() != null ? user.getNickname() : "",
                     "avatar", user.getAvatar() != null ? user.getAvatar() : "",
                     "email", user.getEmail() != null ? user.getEmail() : "",
-                    "is_admin", user.getIsAdmin() != null ? user.getIsAdmin() : false
+                    "is_admin", user.getIsAdmin() != null ? user.getIsAdmin() : false,
+                    "abilities", abilities
             );
             return Result.success(userInfo);
         } catch (Exception e) {
