@@ -27,6 +27,9 @@ public class AdminDashboardService {
 
     private final UserMapper userMapper;
     private final PostMapper postMapper;
+    private final CommentMapper commentMapper;
+    private final PostAuditMapper postAuditMapper;
+    private final BugReportMapper bugReportMapper;
     private final AuditLogMapper auditLogMapper;
     private final LoginLogMapper loginLogMapper;
     private final UserService userService;
@@ -54,6 +57,12 @@ public class AdminDashboardService {
 
         // 5. 最近动态
         response.setRecentActivities(buildRecentActivities());
+
+        // 6. 待办计数（快捷操作角标）
+        response.setTodoCounts(buildTodoCounts());
+
+        // 7. 近 7 日访问趋势
+        response.setVisitTrend(buildVisitTrend());
 
         log.debug("控制台主页仪表盘数据已生成: userId={}", userId);
         return response;
@@ -87,6 +96,12 @@ public class AdminDashboardService {
 
         // 5. 最近动态
         response.setRecentActivities(buildRecentActivities());
+
+        // 6. 待办计数（快捷操作角标）
+        response.setTodoCounts(buildTodoCounts());
+
+        // 7. 近 7 日访问趋势
+        response.setVisitTrend(buildVisitTrend());
 
         log.debug("控制台主页仪表盘数据已生成（WS）: userId={}", userId);
         return response;
@@ -144,10 +159,77 @@ public class AdminDashboardService {
         // 文章统计
         stats.setTotalPosts(buildPostStats());
 
+        // 评论统计
+        stats.setTotalComments(buildCommentStats());
+
         // 今日访问统计（基于登录日志中的成功登录数作为日活指标）
         stats.setTodayVisits(buildTodayVisitsStats());
 
         return stats;
+    }
+
+    /**
+     * 评论统计：可见评论数（status=1，-1 表示已删除）、与上周同期对比
+     */
+    private DashboardResponse.TotalCount buildCommentStats() {
+        LambdaQueryWrapper<Comment> currentWrapper = new LambdaQueryWrapper<>();
+        currentWrapper.eq(Comment::getStatus, 1);
+        long currentCount = commentMapper.selectCount(currentWrapper);
+
+        LocalDateTime lastWeekEnd = LocalDateTime.now().minusWeeks(1).with(LocalTime.MAX);
+        LambdaQueryWrapper<Comment> lastWeekWrapper = new LambdaQueryWrapper<>();
+        lastWeekWrapper.eq(Comment::getStatus, 1)
+                .lt(Comment::getCreateTime, lastWeekEnd);
+        long lastWeekCount = commentMapper.selectCount(lastWeekWrapper);
+
+        return computeTotalCount(currentCount, lastWeekCount);
+    }
+
+    // ==================== 待办计数 ====================
+
+    /**
+     * 待办计数：待审核文章、未读 Bug 反馈
+     */
+    private DashboardResponse.TodoCounts buildTodoCounts() {
+        DashboardResponse.TodoCounts counts = new DashboardResponse.TodoCounts();
+
+        // 待审核文章：与 PostAuditService.getPendingPosts 同源（t_post_audit.audit_status = 0），
+        // 保证角标数字与点进去看到的列表条数一致
+        LambdaQueryWrapper<PostAudit> auditWrapper = new LambdaQueryWrapper<>();
+        auditWrapper.eq(PostAudit::getAuditStatus, 0);
+        counts.setPendingPosts(postAuditMapper.selectCount(auditWrapper));
+
+        // 未读 Bug 反馈：t_bug_report.status = 'unread'
+        LambdaQueryWrapper<BugReport> bugWrapper = new LambdaQueryWrapper<>();
+        bugWrapper.eq(BugReport::getStatus, "unread");
+        counts.setUnreadBugReports(bugReportMapper.selectCount(bugWrapper));
+
+        return counts;
+    }
+
+    // ==================== 访问趋势 ====================
+
+    /**
+     * 近 7 日访问趋势（含今日，按日期升序）
+     * <p>
+     * 口径与 {@link #buildTodayVisitsStats()} 一致：当日成功登录数作为访问指标。
+     * 逐日一条 count 查询——7 次简单计数对管理页足够，也避免为此单写一段聚合 SQL。
+     */
+    private List<DashboardResponse.VisitTrendPoint> buildVisitTrend() {
+        List<DashboardResponse.VisitTrendPoint> trend = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+
+        for (int daysAgo = 6; daysAgo >= 0; daysAgo--) {
+            LocalDate date = today.minusDays(daysAgo);
+
+            LambdaQueryWrapper<LoginLog> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(LoginLog::getLoginResult, "SUCCESS")
+                    .between(LoginLog::getLoginTime, date.atStartOfDay(), date.atTime(LocalTime.MAX));
+
+            trend.add(new DashboardResponse.VisitTrendPoint(date.toString(), loginLogMapper.selectCount(wrapper)));
+        }
+
+        return trend;
     }
 
     /**
@@ -278,28 +360,34 @@ public class AdminDashboardService {
     // ==================== 快捷操作 ====================
 
     /**
-     * 构建快捷操作列表
+     * 快捷操作
+     * <p>
+     * ⚠️ 这里的 route 必须与前端路由表（`frontend/src/router/index.ts` 的 `/admin` 子路由）
+     * 保持一致。此前 6 项里有 4 项指向不存在的路径（`/admin/posts/create`、`/admin/posts`、
+     * `/admin/comments`、`/admin/media`），点下去哪儿也去不了。改前端路由时记得同步这里。
+     * <p>
+     * icon 是前端 `views/admin/Dashboard.vue` 里 iconMap 的键，改名字要同步那边。
      */
     private List<DashboardResponse.QuickAction> buildQuickActions() {
         List<DashboardResponse.QuickAction> actions = new ArrayList<>();
 
         actions.add(new DashboardResponse.QuickAction(
-                "new_post", "写文章", "edit", "/admin/posts/create"
+                "new_post", "写文章", "edit", "/admin/articles/editor"
         ));
         actions.add(new DashboardResponse.QuickAction(
-                "manage_posts", "文章管理", "list", "/admin/posts"
+                "manage_posts", "文章管理", "list", "/admin/articles"
         ));
         actions.add(new DashboardResponse.QuickAction(
-                "manage_comments", "评论管理", "message-square", "/admin/comments"
+                "audit_posts", "文章审核", "check", "/admin/post-audit"
         ));
         actions.add(new DashboardResponse.QuickAction(
                 "manage_users", "用户管理", "users", "/admin/users"
         ));
         actions.add(new DashboardResponse.QuickAction(
-                "system_config", "系统设置", "settings", "/admin/settings"
+                "bug_reports", "Bug 日志", "bug", "/admin/bug-reports"
         ));
         actions.add(new DashboardResponse.QuickAction(
-                "media_library", "媒体库", "image", "/admin/media"
+                "system_config", "系统设置", "settings", "/admin/settings"
         ));
 
         return actions;

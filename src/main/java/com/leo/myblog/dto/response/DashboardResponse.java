@@ -36,6 +36,12 @@ public class DashboardResponse {
     /** 最近动态列表 */
     private List<RecentActivity> recentActivities;
 
+    /** 待办计数（用于快捷操作的角标） */
+    private TodoCounts todoCounts;
+
+    /** 近 7 日访问趋势（按日期升序，含今日） */
+    private List<VisitTrendPoint> visitTrend;
+
     // ==================== App Authenticator 首页字段 ====================
 
     /** 用户信息 */
@@ -81,10 +87,40 @@ public class DashboardResponse {
     public static class StatsCards {
         /** 总用户数 */
         private TotalCount totalUsers;
-        /** 文章总数 */
+        /** 文章总数（已发布） */
         private TotalCount totalPosts;
-        /** 今日访问 */
+        /** 评论总数（可见评论） */
+        private TotalCount totalComments;
+        /** 今日访问（成功登录数） */
         private TotalCount todayVisits;
+    }
+
+    /**
+     * 待办计数
+     * <p>
+     * 用于快捷操作的角标，让管理员不必先点进去才知道有事情等着处理。
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TodoCounts {
+        /** 待审核文章数（与待审核列表同源：t_post_audit.audit_status = 0） */
+        private Long pendingPosts;
+        /** 未读 Bug 反馈数（t_bug_report.status = 'unread'） */
+        private Long unreadBugReports;
+    }
+
+    /**
+     * 访问趋势的一个数据点
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class VisitTrendPoint {
+        /** 日期，yyyy-MM-dd */
+        private String date;
+        /** 当日成功登录数（与 statsCards.todayVisits 同口径） */
+        private Long count;
     }
 
     /**
