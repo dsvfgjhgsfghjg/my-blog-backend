@@ -19,6 +19,7 @@ import com.leo.myblog.dto.response.LoginResponse;
 import com.leo.myblog.dto.response.UserBasicResponse;
 import com.leo.myblog.dto.response.UserResponse;
 import com.leo.myblog.config.CookieSecurityConfig;
+import com.leo.myblog.exception.ForbiddenException;
 import com.leo.myblog.service.AbilityService;
 import com.leo.myblog.service.AvatarUploadService;
 import com.leo.myblog.service.TokenBlacklistService;
@@ -151,7 +152,10 @@ public class UserController {
         // 权限校验：只能查看自己的信息，或者管理员可以查看所有
         if (!userId.equals(targetUserId) && !isAdmin) {
             log.warn("无权查看他人信息: currentUserId={}, targetUserId={}", userId, targetUserId);
-            return Result.error(403, "无权查看他人信息");
+            // 用 ForbiddenException 而不是 Result.error(403, ...)：
+            // 后者是 HTTP 200 + body code 403，前端 request.ts 那条按 error.response.status
+            // 判断的权限分支同样命中不了。全项目的权限拒绝都走这个异常，别再开特例。
+            throw new ForbiddenException("无权查看他人信息");
         }
         
         return Result.success(userService.getUserBasicInfo(targetUserId));
