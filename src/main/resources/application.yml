@@ -21,7 +21,12 @@ spring:
   # =====================
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:myblog}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    # 注意：这里曾挂着 useUnicode / characterEncoding / serverTimezone 三个参数 ——
+    # 它们都是 **MySQL** 的 JDBC 参数，PostgreSQL 驱动会直接忽略（应用一直跑得好好的就是证明）。
+    # 其中 serverTimezone=Asia/Shanghai 尤其误导：它让人以为连接层已经处理了时区，
+    # 实际没有任何效果。时区现在统一由序列化层负责（见 config/UtcLocalDateTimeSerializer），
+    # 连接时区保持 UTC 与库里存的 UTC 值一致，不要在这里切。
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:myblog}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:}  # 通过环境变量注入
     hikari:
