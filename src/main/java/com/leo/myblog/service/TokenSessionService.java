@@ -187,22 +187,51 @@ public class TokenSessionService {
      * @return 下线的会话数量
      */
     public int revokeOtherSessions(Long userId, String currentTokenHash) {
+        return revokeSessions(userId, currentTokenHash);
+    }
+
+    /**
+     * 下线该用户的**全部**会话
+     * <p>
+     * 用途：重置密码 / 用户自己改密码之后。这两件事的动机通常就是「账号可能不安全」，
+     * 此时把登录态全清掉才有意义 —— 否则改了密码，攻击者手上的 token 照样能用。
+     * <p>
+     * 注意这只是 Redis 侧的登录态。**refresh token 不在这里**，它存在
+     * {@code oauth2_authorizations} 表里，必须一并作废，否则拿 refresh 换一个新的
+     * access token 就绕过去了。编排见 {@link SessionRevocationService#revokeAll}。
+     *
+     * @param userId 用户ID
+     * @return 下线的会话数量
+     */
+    public int revokeAllSessions(Long userId) {
+        return revokeSessions(userId, null);
+    }
+
+    /**
+     * 下线会话的公共实现
+     *
+     * @param userId         用户ID
+     * @param exceptTokenHash 要保留的 Token Hash；传 null 表示全部下线
+     * @return 下线的会话数量
+     */
+    private int revokeSessions(Long userId, String exceptTokenHash) {
         try {
             String userSessionsKey = USER_SESSIONS_PREFIX + userId;
             Map<Object, Object> sessions = redisTemplate.opsForHash().entries(userSessionsKey);
-            
+
             if (sessions == null || sessions.isEmpty()) {
                 return 0;
             }
-            
+
             int count = 0;
             for (Map.Entry<Object, Object> entry : sessions.entrySet()) {
                 Object sessionId = entry.getKey();
-                // 跳过当前会话
-                if (currentTokenHash.equals(sessionId.toString())) {
+                // 跳过要保留的会话。这里必须判空：revokeAllSessions 传的就是 null，
+                // 原实现写成 currentTokenHash.equals(...) 会直接 NPE。
+                if (exceptTokenHash != null && exceptTokenHash.equals(sessionId.toString())) {
                     continue;
                 }
-                
+
                 // 计算剩余过期时间用于黑名单保留
                 long remainingSeconds = 0;
                 if (entry.getValue() instanceof Map) {
@@ -221,21 +250,22 @@ public class TokenSessionService {
                 } else {
                     remainingSeconds = SESSION_TIMEOUT_SECONDS;
                 }
-                
+
                 // 将Token Hash加入黑名单
                 tokenBlacklistService.addToBlacklistByHash(userId, sessionId.toString(), remainingSeconds);
-                
-                // 下线其他会话
+
+                // 下线会话
                 redisTemplate.opsForHash().delete(userSessionsKey, sessionId);
                 String tokenSessionKey = TOKEN_SESSION_PREFIX + sessionId;
                 redisTemplate.delete(tokenSessionKey);
                 count++;
             }
-            
-            log.info("下线其他会话: userId={}, count={}, 已加入黑名单", userId, count);
+
+            log.info("下线会话: userId={}, count={}, 保留当前会话={}, 已加入黑名单",
+                    userId, count, exceptTokenHash != null);
             return count;
         } catch (Exception e) {
-            log.error("下线其他会话失败: userId={}", userId, e);
+            log.error("下线会话失败: userId={}", userId, e);
             return 0;
         }
     }

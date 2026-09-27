@@ -50,6 +50,7 @@ public class UserService {
     private final com.leo.myblog.util.UserAgentParser userAgentParser;  // UA解析器
     private final IpBanService ipBanService;  // IP封禁服务
     private final NotificationService notificationService;  // 站内通知服务
+    private final SessionRevocationService sessionRevocationService;  // 登录态吊销
 
     /**
      * 用户注册
@@ -361,7 +362,12 @@ public class UserService {
             tokenBlacklistService.addToBlacklist(userId, token, remainingSeconds);
             log.info("密码修改成功，Token已加入黑名单: userId={}", userId);
         }
-        
+
+        // 其余设备的登录态也一并吊销。
+        // 原先只拉黑「当前」这一个 token，结果是本机登出了、别的设备还留着 ——
+        // 这个组合本身就不自洽：改密码的语义应当是「所有地方都得重新登录」。
+        sessionRevocationService.revokeAll(userId, "用户修改密码");
+
         log.info("用户密码修改成功：userId={}, username={}", userId, username);
     }
     
@@ -453,6 +459,11 @@ public class UserService {
         
         // 记录审计日志（不记录明文密码）
         log.info("管理员重置用户密码: userId={}, username={}", userId, user.getUsername());
+
+        // 吊销该用户的全部登录态。
+        // 重置密码的动机通常就是「账号可能不安全」，只改密码而不清登录态的话，
+        // 攻击者手上的 token（以及 refresh token）依然有效，这次重置等于没做。
+        sessionRevocationService.revokeAll(userId, "管理员重置密码");
 
         // 通知本人。此前这里只有一行被注释掉的 TODO，用户在被重置后完全不知情，
         // 直到下次登录失败才发现 —— 而且那时也分不清是自己记错了还是被人改了。
