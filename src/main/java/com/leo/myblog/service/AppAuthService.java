@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -58,7 +59,9 @@ public class AppAuthService {
     private static final String USER_CHALLENGES_PREFIX = REDIS_PREFIX + "user_challenges:";
 
     // 挑战超时：60 秒
-    private static final long CHALLENGE_TIMEOUT_SECONDS = 60;
+    // 公开给补推 / App 拉取链路：t_auth_history 没有 expires_at 列，
+    // 敏感操作挑战的过期时间只能由 requested_at + 本常量推算。
+    public static final long CHALLENGE_TIMEOUT_SECONDS = 60;
     // 配对码超时：5 分钟
     private static final long PAIR_CODE_TIMEOUT_SECONDS = 300;
     // 配对码长度
@@ -77,7 +80,9 @@ public class AppAuthService {
     private static final long CHALLENGE_CONSUME_WINDOW_MINUTES = 5;
 
     // 挑战状态（与 t_auth_history.status 的取值一致）
+    private static final String STATUS_PENDING = "pending";
     private static final String STATUS_APPROVED = "approved";
+    private static final String STATUS_EXPIRED = "expired";
 
     private final BCryptPasswordEncoder secretEncoder = new BCryptPasswordEncoder();
 
@@ -940,7 +945,7 @@ public class AppAuthService {
         history.setChallengeId(challengeId);
         history.setDeviceId(deviceId);
         history.setDeviceName(deviceName);
-        history.setStatus("pending");
+        history.setStatus(STATUS_PENDING);
         history.setNumbers(numbers);
         history.setCorrectNumber(correctNumber);
         history.setRequestedAt(LocalDateTime.now());
@@ -948,6 +953,53 @@ public class AppAuthService {
         authHistoryMapper.insert(history);
 
         log.debug("记录挑战历史: challengeId={}, userId={}", challengeId, userId);
+    }
+
+    /**
+     * 查询用户「仍在时效窗口内」的敏感操作待处理挑战
+     * <p>
+     * 这是「设备此刻不在线」场景下的权威数据源：挑战在生成时就无条件落库，
+     * 于是断线补推（WebSocket）与 App 主动拉取（REST）都能靠它把挑战找回来。
+     * <p>
+     * 时效窗口取 {@link #CHALLENGE_TIMEOUT_SECONDS}，与 Redis 里挑战本身的 TTL 一致 ——
+     * 比它更早的记录即便查出来也验不过（Redis 键已过期），推给 App 只会得到一个
+     * 「注定失败」的挑战。
+     *
+     * @param userId 用户 ID
+     * @return 待处理挑战记录，按发起时间倒序；无则返回空列表
+     */
+    public List<AuthHistory> getPendingChallengeRecords(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+
+        LocalDateTime since = LocalDateTime.now().minusSeconds(CHALLENGE_TIMEOUT_SECONDS);
+        LambdaQueryWrapper<AuthHistory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AuthHistory::getUserId, userId)
+                .eq(AuthHistory::getStatus, STATUS_PENDING)
+                .ge(AuthHistory::getRequestedAt, since)
+                .orderByDesc(AuthHistory::getRequestedAt);
+
+        List<AuthHistory> records = authHistoryMapper.selectList(wrapper);
+        return records != null ? records : List.of();
+    }
+
+    /**
+     * 由挑战发起时间推算过期时间（Unix 秒）
+     * <p>
+     * {@code t_auth_history} 没有 expires_at 列，而推给 App 的挑战消息与
+     * App 拉取接口都要求 expiresAt。库里的 {@code requested_at} 是
+     * {@code timestamp without time zone}、按 UTC 语义存（见
+     * {@code UtcLocalDateTimeSerializer}），所以这里同样按 UTC 解释。
+     *
+     * @param requestedAt 挑战发起时间；为 null 时返回 0
+     * @return Unix 秒；入参为 null 时返回 0
+     */
+    public static long challengeExpiresAtSeconds(LocalDateTime requestedAt) {
+        if (requestedAt == null) {
+            return 0L;
+        }
+        return requestedAt.toEpochSecond(ZoneOffset.UTC) + CHALLENGE_TIMEOUT_SECONDS;
     }
 
     /**
@@ -1018,6 +1070,24 @@ public class AppAuthService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateChallengeResult(String challengeId, String status) {
+        updateChallengeResult(challengeId, status, null, null);
+    }
+
+    /**
+     * 更新挑战结果，并记录是哪台设备做出的应答
+     * <p>
+     * 敏感操作挑战现在「先生成落库、再尽力推送」，落库时还不知道哪台设备会应答
+     * （手机可能压根不在线），因此应答设备只能在 App 回消息时补记 ——
+     * 否则 {@code /check-push} 返回的 deviceName 恒为 null，前端就显示不出
+     * 「是哪台设备批准的」。
+     *
+     * @param challengeId 挑战 ID
+     * @param status      状态: approved / rejected / expired
+     * @param deviceId    应答设备 ID；null 表示不修改
+     * @param deviceName  应答设备名称；null 表示不修改
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateChallengeResult(String challengeId, String status, String deviceId, String deviceName) {
         LambdaQueryWrapper<AuthHistory> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AuthHistory::getChallengeId, challengeId);
         AuthHistory history = authHistoryMapper.selectOne(wrapper);
@@ -1025,8 +1095,14 @@ public class AppAuthService {
         if (history != null) {
             history.setStatus(status);
             history.setRespondedAt(LocalDateTime.now());
+            if (deviceId != null) {
+                history.setDeviceId(deviceId);
+            }
+            if (deviceName != null) {
+                history.setDeviceName(deviceName);
+            }
             authHistoryMapper.updateById(history);
-            log.debug("更新挑战结果: challengeId={}, status={}", challengeId, status);
+            log.debug("更新挑战结果: challengeId={}, status={}, deviceId={}", challengeId, status, deviceId);
         }
     }
 
@@ -1040,7 +1116,8 @@ public class AppAuthService {
         response.setDeviceId(history.getDeviceId());
         response.setDeviceName(history.getDeviceName());
         response.setNumbers(history.getNumbers());
-        response.setCorrectNumber(history.getCorrectNumber());
+        // 刻意不下发 correctNumber —— 见 AuthHistoryResponse 类注释。
+        // 这个接口是给 App 用的，而 App **永远只能拿到 3 个候选数字**。
         response.setStatus(history.getStatus());
         response.setRequestedAt(history.getRequestedAt());
         response.setRespondedAt(history.getRespondedAt());
@@ -1069,7 +1146,20 @@ public class AppAuthService {
             // 删除用户活跃挑战集合
             redisTemplate.delete(userChallengesKey);
 
-            log.info("已失效 {} 个旧挑战: userId={}, challengeIds={}", activeChallengeIds.size(), userId, activeChallengeIds);
+            // 2. 数据库同步置为 expired。
+            //    没有这一步，被作废的挑战仍是 pending 行，会继续出现在「待处理挑战」查询里
+            //    （App 直接拉取、以及设备上线时的补推），App 上就冒出一个注定验不过的挑战。
+            LocalDateTime now = LocalDateTime.now();
+            LambdaUpdateWrapper<AuthHistory> expireWrapper = new LambdaUpdateWrapper<>();
+            expireWrapper.in(AuthHistory::getChallengeId, activeChallengeIds)
+                    .eq(AuthHistory::getUserId, userId)
+                    .eq(AuthHistory::getStatus, STATUS_PENDING)
+                    .set(AuthHistory::getStatus, STATUS_EXPIRED)
+                    .set(AuthHistory::getRespondedAt, now);
+            int expiredRows = authHistoryMapper.update(null, expireWrapper);
+
+            log.info("已失效 {} 个旧挑战: userId={}, challengeIds={}, 同步置过期行数={}",
+                    activeChallengeIds.size(), userId, activeChallengeIds, expiredRows);
         }
     }
 

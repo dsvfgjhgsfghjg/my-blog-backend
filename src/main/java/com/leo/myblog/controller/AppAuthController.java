@@ -5,8 +5,10 @@ import com.leo.myblog.common.Result;
 import com.leo.myblog.dto.response.AuthHistoryResponse;
 import com.leo.myblog.dto.response.CipherInfoResponse;
 import com.leo.myblog.dto.response.DashboardResponse;
+import com.leo.myblog.dto.response.PendingChallengeResponse;
 import com.leo.myblog.entity.AppDevice;
 import com.leo.myblog.service.AppAuthService;
+import com.leo.myblog.service.PendingChallengeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +28,7 @@ import java.util.Map;
 public class AppAuthController {
 
     private final AppAuthService appAuthService;
+    private final PendingChallengeService pendingChallengeService;
 
     /**
      * 生成设备码（Device Secret）
@@ -269,6 +272,28 @@ public class AppAuthController {
                 "size", historyPage.getSize(),
                 "pages", historyPage.getPages()
         ));
+    }
+
+    /**
+     * 拉取当前用户所有待处理挑战（两步登录 + 敏感操作）
+     * <p>
+     * 供 App 主动拉取，与 WebSocket 上线补推互为补充：手机在兜里、App 在后台时
+     * WebSocket 大概率已断，App 打开后调本接口即可把「排队中」的挑战捡回来。
+     * <p>
+     * ⚠️⚠️ 响应里<b>绝不能有 correctNumber</b>：App 只能拿到 3 个候选数字，
+     * 正确答案由用户在发起操作的那个浏览器上读出。数字匹配的安全性建立在
+     * 「攻击者无法把数字转达给受害者」之上，下发答案会让它退化成 1/3 概率的盲猜。
+     *
+     * @param userId 用户 ID（从 JWT 认证获取）
+     * @return 待处理挑战列表，按过期时间倒序
+     */
+    @GetMapping("/pending-challenges")
+    public Result<List<PendingChallengeResponse>> getPendingChallenges(@RequestAttribute Long userId) {
+        log.debug("拉取待处理挑战: userId={}", userId);
+
+        List<PendingChallengeResponse> challenges = pendingChallengeService.getPendingChallenges(userId);
+
+        return Result.success(challenges);
     }
 
     /**

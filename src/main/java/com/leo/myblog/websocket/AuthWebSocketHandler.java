@@ -352,19 +352,29 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
 
         log.info("DH 密钥交换完成: sessionId={}, cipher={}", session.getId(), selectedCipher);
 
-        // 尝试推送待处理的登录挑战
+        // 尝试补推该用户所有待处理的挑战（登录 + 敏感操作）
         try {
-            pushPendingLoginChallenges(session, deviceId);
+            pushPendingChallenges(session, deviceId);
         } catch (Exception e) {
-            log.warn("推送待处理登录挑战失败: sessionId={}", session.getId(), e);
+            log.warn("推送待处理挑战失败: sessionId={}", session.getId(), e);
         }
     }
 
     /**
-     * 推送待处理的登录挑战
-     * 设备上线后，检查是否有该用户的待处理登录挑战，有则推送
+     * 补推该用户所有待处理的挑战（登录挑战 + 敏感操作挑战）
+     * <p>
+     * 设备上线后调用。手机在兜里、App 在后台时 socket 通常已断，所以「发起时设备不在线」
+     * 是常态而非边缘情况 —— 两条链路都必须能在设备上线后把挑战找回来：
+     * <ul>
+     *   <li>登录挑战：来源是 Redis 的待推送集合 {@code app:auth:login_pending:}；</li>
+     *   <li>敏感操作挑战：来源是 {@code t_auth_history} 里 status='pending' 且在时效窗口内的记录。</li>
+     * </ul>
+     * 单条推送失败不影响其余挑战。
+     * <p>
+     * 包级可见以便单元测试（{@code PendingChallengeRePushTest}）直接断言补推覆盖面，
+     * 无需真的走一遍 DH 握手。
      */
-    private void pushPendingLoginChallenges(WebSocketSession session, String deviceId) throws IOException {
+    void pushPendingChallenges(WebSocketSession session, String deviceId) throws IOException {
         if (deviceId == null) {
             return;
         }
@@ -374,24 +384,60 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // 获取待处理的登录挑战
+        int pushed = 0;
+
+        // 1. 待处理的登录挑战
         java.util.List<String> pendingChallengeIds = loginService.getUserPendingLoginChallengeIds(userId);
-        if (pendingChallengeIds == null || pendingChallengeIds.isEmpty()) {
-            log.debug("无待处理的登录挑战: userId={}", userId);
-            return;
+        if (pendingChallengeIds != null) {
+            for (String challengeId : pendingChallengeIds) {
+                LoginService.LoginChallenge challengeDetail = loginService.getLoginChallengeDetail(challengeId);
+                if (challengeDetail == null) {
+                    continue;
+                }
+                if (sendChallengeSafely(session, buildLoginChallengeMessage(challengeDetail), challengeId)) {
+                    pushed++;
+                    log.info("补推待处理登录挑战: challengeId={}, userId={}, deviceId={}", challengeId, userId, deviceId);
+                }
+            }
         }
 
-        log.info("发现 {} 个待处理的登录挑战: userId={}", pendingChallengeIds.size(), userId);
-
-        // 向设备推送所有待处理的登录挑战
-        for (String challengeId : pendingChallengeIds) {
-            LoginService.LoginChallenge challengeDetail = loginService.getLoginChallengeDetail(challengeId);
-            if (challengeDetail == null) {
+        // 2. 待处理的敏感操作挑战（数据库是权威数据源）
+        for (com.leo.myblog.entity.AuthHistory history : appAuthService.getPendingChallengeRecords(userId)) {
+            if (history.getChallengeId() == null) {
                 continue;
             }
+            String message = buildChallengeMessage(
+                    history.getChallengeId(),
+                    history.getNumbers(),
+                    AppAuthService.challengeExpiresAtSeconds(history.getRequestedAt()));
+            if (sendChallengeSafely(session, message, history.getChallengeId())) {
+                pushed++;
+                log.info("补推待处理敏感操作挑战: challengeId={}, userId={}, deviceId={}",
+                        history.getChallengeId(), userId, deviceId);
+            }
+        }
 
-            sendEncryptedMessage(session, buildLoginChallengeMessage(challengeDetail));
-            log.info("补推待处理登录挑战: challengeId={}, userId={}, deviceId={}", challengeId, userId, deviceId);
+        if (pushed == 0) {
+            log.debug("无待处理的挑战: userId={}, deviceId={}", userId, deviceId);
+        } else {
+            log.info("共补推 {} 个待处理挑战: userId={}, deviceId={}", pushed, userId, deviceId);
+        }
+    }
+
+    /**
+     * 发送单条挑战，吞掉异常
+     * <p>
+     * 补推是一批多条，一条失败（对端已断开等）不应该让后续挑战都发不出去。
+     *
+     * @return true=发送成功
+     */
+    private boolean sendChallengeSafely(WebSocketSession session, String message, String challengeId) {
+        try {
+            sendEncryptedMessage(session, message);
+            return true;
+        } catch (Exception e) {
+            log.warn("补推挑战失败: challengeId={}, sessionId={}", challengeId, session.getId(), e);
+            return false;
         }
     }
 
@@ -423,15 +469,26 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
      * 包级可见以便单元测试（{@code ChallengeRoutingTest}）直接断言消息内容。
      */
     String buildLoginChallengeMessage(LoginService.LoginChallenge challenge) {
-        int[] numbers = challenge.getNumbers();
-        // expiresAt 为 Unix 秒，App 端会做 expiresAt * 1000（见 ChallengeDialogFragment）
+        return buildChallengeMessage(challenge.getChallengeId(), challenge.getNumbers(), challenge.getExpiresAt());
+    }
+
+    /**
+     * 构建挑战消息（登录挑战与敏感操作挑战共用同一种消息结构）
+     * <p>
+     * <b>严禁把 correctNumber 放进消息</b>：App 只能拿到 3 个候选，正确答案由用户在网页上读。
+     * <p>
+     * expiresAt 必须是 <b>Unix 秒</b>：App 端会做 {@code expiresAt * 1000}
+     * （见 ChallengeDialogFragment），写成毫秒会让 App 一打开就显示「已过期」。
+     */
+    String buildChallengeMessage(String challengeId, int[] numbers, long expiresAt) {
+        int[] safeNumbers = numbers != null ? numbers : new int[0];
         return String.format(
                 "{\"type\":\"challenge\",\"challengeId\":\"%s\",\"numbers\":[%d,%d,%d],\"expiresAt\":%d}",
-                challenge.getChallengeId(),
-                numbers.length > 0 ? numbers[0] : 0,
-                numbers.length > 1 ? numbers[1] : 0,
-                numbers.length > 2 ? numbers[2] : 0,
-                challenge.getExpiresAt()
+                challengeId,
+                safeNumbers.length > 0 ? safeNumbers[0] : 0,
+                safeNumbers.length > 1 ? safeNumbers[1] : 0,
+                safeNumbers.length > 2 ? safeNumbers[2] : 0,
+                expiresAt
         );
     }
 
@@ -473,8 +530,11 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 对外暴露的推送挑战方法
-     * 供 AppPushTestController 调用，向指定用户的设备推送挑战
+     * 对外暴露的推送挑战方法（生成 + 落库 + 推送）
+     * <p>
+     * 供 AppPushTestController 调用。敏感操作验证链路请改用
+     * {@link #pushChallenge} —— 那边必须「先生成一个挑战、再推给所有设备」，
+     * 用本方法会导致每台设备各生成一个数字不同的挑战。
      *
      * @param session  WebSocket 会话
      * @param userId   用户 ID
@@ -485,38 +545,49 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
         // 生成挑战
         AppAuthService.ChallengeInfo challenge = appAuthService.generateChallenge(userId);
 
-        // 获取设备名称
-        String deviceName = null;
-        if (deviceId != null) {
-            com.leo.myblog.entity.AppDevice device = appAuthService.getUserDevices(userId).stream()
-                    .filter(d -> d.getDeviceId().equals(deviceId))
-                    .findFirst().orElse(null);
-            if (device != null) {
-                deviceName = device.getDeviceName();
-            }
-        }
-
         // 记录挑战到数据库
         appAuthService.recordChallenge(userId, challenge.getChallengeId(),
-                challenge.getNumbers(), challenge.getCorrectNumber(), deviceId, deviceName);
-
-        // 构建挑战消息（不包含正确答案）
-        String challengeMsg = String.format(
-                "{\"type\":\"challenge\",\"challengeId\":\"%s\",\"numbers\":[%d,%d,%d],\"expiresAt\":%d}",
-                challenge.getChallengeId(),
-                challenge.getNumbers()[0],
-                challenge.getNumbers()[1],
-                challenge.getNumbers()[2],
-                challenge.getExpiresAt()
-        );
+                challenge.getNumbers(), challenge.getCorrectNumber(), deviceId,
+                resolveDeviceName(userId, deviceId));
 
         // 加密后发送
-        sendEncryptedMessage(session, challengeMsg);
+        pushChallenge(session, challenge);
 
         log.info("推送加密挑战: challengeId={}, userId={}, deviceId={}",
                 challenge.getChallengeId(), userId, deviceId);
 
         return challenge;
+    }
+
+    /**
+     * 把**已生成好**的挑战推给一台设备
+     * <p>
+     * 与 {@link #pushChallengeToUser} 的区别：本方法不生成、不落库，只负责推送。
+     * 这样才能保证多台在线设备收到的是**同一个 challengeId 与同一组候选数字** ——
+     * 页面只展示一个数字、轮询也只认一个 challengeId，若各设备各生成一个挑战，
+     * 除第一台以外的设备收到的都是页面之外的挑战，用户选中也验不过。
+     *
+     * @param session   WebSocket 会话
+     * @param challenge 已生成（并已落库）的挑战
+     */
+    public void pushChallenge(WebSocketSession session, AppAuthService.ChallengeInfo challenge) throws IOException {
+        sendEncryptedMessage(session, buildChallengeMessage(
+                challenge.getChallengeId(), challenge.getNumbers(), challenge.getExpiresAt()));
+    }
+
+    /**
+     * 解析设备名称，查不到时退回 deviceId
+     */
+    private String resolveDeviceName(Long userId, String deviceId) {
+        if (deviceId == null) {
+            return null;
+        }
+        return appAuthService.getUserDevices(userId).stream()
+                .filter(d -> deviceId.equals(d.getDeviceId()))
+                .map(com.leo.myblog.entity.AppDevice::getDeviceName)
+                .filter(name -> name != null && !name.isEmpty())
+                .findFirst()
+                .orElse(deviceId);
     }
 
     /**
@@ -545,18 +616,9 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
         appAuthService.recordChallenge(userId, challenge.getChallengeId(),
                 challenge.getNumbers(), challenge.getCorrectNumber(), deviceId, deviceName);
 
-        // 构建挑战消息（不包含正确答案）
-        String challengeMsg = String.format(
-                "{\"type\":\"challenge\",\"challengeId\":\"%s\",\"numbers\":[%d,%d,%d],\"expiresAt\":%d}",
-                challenge.getChallengeId(),
-                challenge.getNumbers()[0],
-                challenge.getNumbers()[1],
-                challenge.getNumbers()[2],
-                challenge.getExpiresAt()
-        );
-
-        // 加密后发送
-        sendEncryptedMessage(session, challengeMsg);
+        // 加密后发送（消息结构由 buildChallengeMessage 统一，绝不包含正确答案）
+        sendEncryptedMessage(session, buildChallengeMessage(
+                challenge.getChallengeId(), challenge.getNumbers(), challenge.getExpiresAt()));
 
         log.info("发送加密挑战: challengeId={}, userId={}, deviceId={}",
                 challenge.getChallengeId(), userId, deviceId);
@@ -595,13 +657,16 @@ public class AuthWebSocketHandler extends TextWebSocketHandler {
 
         // 更新认证历史记录（仅敏感操作挑战会落 auth_history；
         // 登录挑战的结果由 LoginService 自己维护在 login_result 键里）
+        // 同时补记应答设备：敏感操作挑战是「先生成落库、再尽力推送」，落库时还不知道
+        // 哪台设备会应答，不在这里补记的话 /check-push 就报不出设备名。
         if (!outcome.isLoginChallenge()) {
+            String deviceName = resolveDeviceName(userId, deviceId);
             if (outcome.isApproved()) {
-                appAuthService.updateChallengeResult(challengeId, "approved");
+                appAuthService.updateChallengeResult(challengeId, "approved", deviceId, deviceName);
             } else if (outcome.isExpired()) {
-                appAuthService.updateChallengeResult(challengeId, "expired");
+                appAuthService.updateChallengeResult(challengeId, "expired", deviceId, deviceName);
             } else {
-                appAuthService.updateChallengeResult(challengeId, "rejected");
+                appAuthService.updateChallengeResult(challengeId, "rejected", deviceId, deviceName);
             }
         }
 
