@@ -1,0 +1,26 @@
+# ============================================================
+# prod profile 专用覆盖
+# ============================================================
+# 这个文件的存在本身就是必要的：生产容器里设了 SPRING_PROFILES_ACTIVE=prod，
+# 但此前仓库里**没有** application-prod.yml，那个 profile 一直是**空转**的 ——
+# 于是生产一直在沿用 application.yml 里的开发配置（见下）。
+#
+# 这里只放「与开发/测试不同」的项，其余走 application.yml。
+
+logging:
+  level:
+    # 原先 application.yml 把 com.leo.myblog 和 org.springframework.security 都设成 DEBUG。
+    # 那是开发期的调试配置，在生产意味着日志量随 QPS 线性增长（纯 I/O 开销），
+    # 而且会把大量内部实现细节写进日志。
+    com.leo.myblog: INFO
+    org.springframework.security: WARN
+
+mybatis-plus:
+  configuration:
+    # ⚠️ 关掉 SQL 打屏。application.yml 里用的是 StdOutImpl，注释虽写「开发环境」，
+    # 但它会连同**参数值**一起打印 ——
+    #   例如 INSERT INTO t_audit_log (..., request_params) VALUES (..., '{"password":"明文"}')
+    # 这与审计表曾经明文落库的是同一批数据。库里和备份里的明文已清理过，
+    # 不该再让它们从日志这条路重新漏一遍。
+    # 需要排查 SQL 时，临时用环境变量或在低峰期改回 StdOutImpl，不要长期开着。
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

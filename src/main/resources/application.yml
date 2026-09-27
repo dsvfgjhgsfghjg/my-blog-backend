@@ -125,7 +125,10 @@ third-party:
 # JWT 配置
 # =====================
 jwt:
-  secret: your_jwt_secret_key_here_change_it_to_a_long_random_string  # JWT密钥（至少32字符）
+  # ⚠️ 这里的默认值是**公开的**，仅供本地开发与测试。
+  # 生产必须通过 JWT_SECRET 环境变量注入 —— JwtUtil 会在 prod profile 下强制校验
+  # 环境变量确实存在，否则拒绝启动：用公开默认值启动意味着任何人都能伪造 admin token。
+  secret: ${JWT_SECRET:your_jwt_secret_key_here_change_it_to_a_long_random_string}
   expiration: 86400000  # token过期时间（毫秒），默认24小时
   header: Authorization  # HTTP头名称
   prefix: Bearer         # token前缀
