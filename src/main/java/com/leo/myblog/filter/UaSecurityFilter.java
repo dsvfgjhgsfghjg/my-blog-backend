@@ -50,6 +50,15 @@ public class UaSecurityFilter implements Filter {
     private static final long BAN_DURATION_HOURS = 24; // 封禁时长（小时）
     
     // 公开接口白名单（不触发UA检查）
+    //
+    // ⚠️ 这份列表**不要**与 config/PublicPaths 合并 —— 两者回答的是不同的问题：
+    //   这里：哪些路径**不做 UA 检查**
+    //   那里：哪些路径**不需要鉴权**
+    // 看起来都是「公开接口」，实际差别很大。反例：
+    //   · GET /api/posts/{id} 是公开可读的（在 PublicPaths 里），但**故意不在这里** ——
+    //     爬虫抓公开文章正是最该做 UA 检查的场景，合并会让它们直接免检。
+    //   · /api/comments/post（发表评论）需要鉴权，却在这里 —— 因为它的 UA 风险模式不同。
+    // 合并会让这套风控静默失效，且不会有任何报错。
     private static final String[] PUBLIC_PATHS = {
         "/api/system/config/public",
         "/api/users/register",
