@@ -9,6 +9,7 @@ import com.leo.myblog.dto.response.PostListItemResponse;
 import com.leo.myblog.entity.Post;
 import com.leo.myblog.entity.PostAudit;
 import com.leo.myblog.entity.User;
+import com.leo.myblog.enums.NotificationType;
 import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.mapper.PostAuditMapper;
 import com.leo.myblog.mapper.PostMapper;
@@ -21,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -36,7 +39,8 @@ public class PostAuditService {
     private final UserCacheService userCacheService;
     private final AbilityValidator abilityValidator;
     private final com.leo.myblog.util.PostResponseConverter postResponseConverter;
-    
+    private final NotificationService notificationService;
+
     /**
      * 创建文章时自动创建审计记录
      * @param postId 文章ID
@@ -133,8 +137,44 @@ public class PostAuditService {
         }
         post.setUpdateTime(LocalDateTime.now());
         postMapper.updateById(post);
+
+        // 8. 通知作者审核结果
+        //    以前这里什么都不做，作者提交后只能自己反复刷新列表去猜结果，
+        //    被拒绝时连 audit_comment 里写的原因都看不到。
+        //    通知与本次审计同事务（NotificationService 用默认传播行为），
+        //    审计回滚了就不会留下一条「已通过」的假消息。
+        notifyAuthor(post, request);
     }
-    
+
+    /**
+     * 把审核结果通知给作者
+     * <p>
+     * 通知写失败时**不吞异常**：让整个审计事务回滚，审计员看到明确报错后重试。
+     * 理由是这个功能的上一版就是被注释掉的 —— 通知静默失败等于回到「作者什么都不知道」，
+     * 而那时审核结果已经落库、作者再也不会被通知到，比这次操作直接失败更糟。
+     * 通知与审核同库同事务，写不进去基本意味着库本身有问题。
+     */
+    private void notifyAuthor(Post post, AuditPostRequest request) {
+        boolean passed = request.getAuditStatus() == 1;
+
+        String title = passed ? "文章审核通过" : "文章审核未通过";
+        String content;
+        if (passed) {
+            content = "《" + post.getTitle() + "》已通过审核并发布。";
+        } else {
+            String comment = request.getAuditComment();
+            content = "《" + post.getTitle() + "》未通过审核。"
+                    + (comment == null || comment.isBlank() ? "（审核员未填写原因）" : "原因：" + comment);
+        }
+
+        notificationService.notify(
+                post.getUserId(),
+                passed ? NotificationType.POST_AUDIT_PASSED : NotificationType.POST_AUDIT_REJECTED,
+                title,
+                content,
+                "/admin/articles");
+    }
+
     /**
      * 获取待审核文章列表（仅审计员可见）
      * @param auditorId 审计员ID
@@ -168,12 +208,20 @@ public class PostAuditService {
         LambdaQueryWrapper<Post> postWrapper = new LambdaQueryWrapper<>();
         postWrapper.in(Post::getId, postIds);
         List<Post> posts = postMapper.selectList(postWrapper);
-        
-        // 4. 转换为响应对象
-        List<PostListItemResponse> responseList = posts.stream()
+
+        // 4. 按**审计记录的顺序**（create_time 倒序）转换，而不是按 selectList 的返回顺序。
+        //    IN (...) 查询不保证返回顺序，直接用 posts 的遍历顺序会让分页结果的先后跟
+        //    排序规则对不上 —— 同一页里最早提交的可能排在最前面，翻页时看起来像乱序。
+        //    另外被逻辑删除的文章不会出现在 posts 里，所以按 postIds 取、取不到就跳过。
+        Map<Long, Post> postById = posts.stream()
+                .collect(Collectors.toMap(Post::getId, p -> p, (a, b) -> a));
+
+        List<PostListItemResponse> responseList = postIds.stream()
+                .map(postById::get)
+                .filter(Objects::nonNull)
                 .map(postResponseConverter::convertToPostListItemResponse)
                 .collect(Collectors.toList());
-        
+
         // 5. 构建分页结果
         Page<PostListItemResponse> responsePage = new Page<>(pageNum, pageSize, auditPage.getTotal());
         responsePage.setRecords(responseList);
