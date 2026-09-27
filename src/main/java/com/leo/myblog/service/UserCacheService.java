@@ -9,7 +9,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 用户缓存服务
@@ -69,6 +77,89 @@ public class UserCacheService {
         }
     }
     
+    /**
+     * 批量获取用户信息（先查缓存，缓存未命中的再一次性查库）
+     * <p>
+     * 与 {@link #getUserById(Long)} 的语义保持一致：返回的是 userId -> User 的映射，
+     * 查不到的用户不会出现在映射里。入参里的 null 会被忽略、重复的 id 会去重，
+     * 因此调用方不需要自己先去重。
+     *
+     * @param userIds 用户ID集合
+     * @return userId -> User，永不为 null
+     */
+    public Map<Long, User> getUsersByIds(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<Long> ids = userIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<String> keys = ids.stream()
+                .map(id -> USER_CACHE_PREFIX + id)
+                .collect(Collectors.toList());
+
+        Map<Long, User> result = new HashMap<>(ids.size());
+        try {
+            // 1. 一次 multiGet 把命中的缓存全部取回（missing 位置上会是 null）
+            List<Object> cachedValues = redisTemplate.opsForValue().multiGet(keys);
+
+            List<Long> missedIds = new ArrayList<>();
+            for (int i = 0; i < ids.size(); i++) {
+                Object cachedValue = (cachedValues != null && i < cachedValues.size()) ? cachedValues.get(i) : null;
+                if (cachedValue == null) {
+                    missedIds.add(ids.get(i));
+                    continue;
+                }
+                User cachedUser;
+                if (cachedValue instanceof User) {
+                    cachedUser = (User) cachedValue;
+                } else {
+                    String json = objectMapper.writeValueAsString(cachedValue);
+                    cachedUser = objectMapper.readValue(json, User.class);
+                }
+                result.put(ids.get(i), cachedUser);
+            }
+
+            // 2. 未命中的批量查库，并回填缓存
+            if (!missedIds.isEmpty()) {
+                List<User> users = userMapper.selectBatchIds(missedIds);
+                if (users != null) {
+                    for (User user : users) {
+                        result.put(user.getId(), user);
+                        try {
+                            redisTemplate.opsForValue().set(USER_CACHE_PREFIX + user.getId(), user,
+                                    CACHE_EXPIRE_HOURS, TimeUnit.HOURS);
+                        } catch (Exception e) {
+                            // 回填失败不影响本次返回
+                            log.error("用户信息回填缓存失败: userId={}", user.getId(), e);
+                        }
+                    }
+                }
+                log.debug("批量获取用户信息: 命中={}, 回源={}", ids.size() - missedIds.size(), missedIds.size());
+            }
+
+            return result;
+        } catch (Exception e) {
+            log.error("批量获取用户信息失败，降级为直接查库: userIds={}", ids, e);
+            // 降级：与 getUserById 一样直接查库，只是改成批量
+            List<User> users = userMapper.selectBatchIds(ids);
+            if (users == null) {
+                return Collections.emptyMap();
+            }
+            Map<Long, User> fallback = new HashMap<>(users.size());
+            for (User user : users) {
+                fallback.put(user.getId(), user);
+            }
+            return fallback;
+        }
+    }
+
     /**
      * 清除用户缓存
      */
