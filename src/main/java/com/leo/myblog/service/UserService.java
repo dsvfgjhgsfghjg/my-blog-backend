@@ -11,6 +11,7 @@ import com.leo.myblog.dto.response.LoginResponse;
 import com.leo.myblog.dto.response.UserBasicResponse;
 import com.leo.myblog.dto.response.UserResponse;
 import com.leo.myblog.entity.User;
+import com.leo.myblog.enums.NotificationType;
 import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.mapper.UserMapper;
 import com.leo.myblog.util.JwtUtil;
@@ -48,7 +49,8 @@ public class UserService {
     private final TokenSessionService tokenSessionService;  // Token会话服务
     private final com.leo.myblog.util.UserAgentParser userAgentParser;  // UA解析器
     private final IpBanService ipBanService;  // IP封禁服务
-    
+    private final NotificationService notificationService;  // 站内通知服务
+
     /**
      * 用户注册
      * 安全修复V8: 用户名规范化处理（去除首尾空白、转小写）
@@ -451,9 +453,19 @@ public class UserService {
         
         // 记录审计日志（不记录明文密码）
         log.info("管理员重置用户密码: userId={}, username={}", userId, user.getUsername());
-        
-        // TODO: 实际项目中应该通过邮件/短信通知用户
-        // sendPasswordNotification(user.getUsername(), newPassword);
+
+        // 通知本人。此前这里只有一行被注释掉的 TODO，用户在被重置后完全不知情，
+        // 直到下次登录失败才发现 —— 而且那时也分不清是自己记错了还是被人改了。
+        //
+        // ⚠️ 刻意**不把新密码写进通知正文**：那等于把明文凭据落进 t_notification 表，
+        // 正是 t_audit_log 正在做安全评估的那类问题（见 TODO.md）。
+        // 站内信只负责告知「密码被改了」，新密码由管理员通过其它渠道转达。
+        notificationService.notify(
+                userId,
+                NotificationType.PASSWORD_RESET,
+                "密码已被重置",
+                "你的账号密码已被管理员重置。如果这不是预期的操作，请立即联系管理员。",
+                null);
     }
     
     /**
