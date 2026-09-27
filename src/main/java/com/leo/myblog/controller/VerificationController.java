@@ -157,6 +157,7 @@ public class VerificationController {
 
         String challengeId = null;
         long expiresAt = 0;
+        Integer correctNumber = null;
 
         for (Map.Entry<String, org.springframework.web.socket.WebSocketSession> entry : onlineSessions.entrySet()) {
             String deviceId = entry.getKey();
@@ -168,6 +169,9 @@ public class VerificationController {
                 if (challengeId == null) {
                     challengeId = challengeInfo.getChallengeId();
                     expiresAt = challengeInfo.getExpiresAt();
+                    // 数字匹配：浏览器要把这个数字显示出来，用户才能在 App 的 3 个候选里挑中它。
+                    // 此前漏传，页面上看不到该选哪个，只能盲选。
+                    correctNumber = challengeInfo.getCorrectNumber();
                 }
             } catch (Exception e) {
                 log.error("推送挑战失败: deviceId={}", deviceId, e);
@@ -183,6 +187,7 @@ public class VerificationController {
         response.setStatus("pushed");
         response.setDeviceNames(deviceNames);
         response.setExpiresAt(expiresAt);
+        response.setCorrectNumber(correctNumber);
 
         return Result.success(response);
     }
