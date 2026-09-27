@@ -98,10 +98,14 @@ pgsql.sql
 
 # Ignore all API documentation files
 docs/api/*.md
-# 例外：审计日志的 API 契约是前端/App 对接的必需依据，且会随接口一起演进，
-# 需要随仓库走。其余 61 份 API 文档暂时继续忽略 —— 它们还没逐份确认过是否含
-# 真实凭据或内网信息，而本仓库有公开的 GitHub 远端。要放开更多请先逐份核对。
+# 例外：以下几份 API 文档需要随仓库走 —— 它们是前端/App 对接的必需依据，
+# 会随接口一起演进。每放开一份前都逐份核对过不含真实凭据或内网信息
+# （扫描项：长十六进制串、私钥、非 localhost 的 IP、password=/secret= 赋值），
+# 因为本仓库有公开的 GitHub 远端。
+# 其余 61 份暂时继续忽略 —— 还没逐份确认过。
 !docs/api/AUDIT_LOG_API.md
+!docs/api/POST_AUDIT_API.md
+!docs/api/NOTIFICATION_API.md
 
 # ============================================
 # Deployment Packages
