@@ -21,7 +21,15 @@ public class PostContentMigrationService {
     
     private final PostMapper postMapper;
     private final PostStorageService postStorageService;
-    
+
+    /**
+     * t_post.content 列是否已确认不可读
+     * <p>
+     * 只在「列被删」这种全局性故障上置位，避免为每一篇文章重复抛同一条 SQL 异常、
+     * 把日志刷满从而盖住真正的原因。
+     */
+    private boolean contentColumnMissing = false;
+
     /**
      * 迁移所有文章的内容到 MinIO
      * 
@@ -45,10 +53,8 @@ public class PostContentMigrationService {
         
         for (Post post : posts) {
             try {
-                // 注意：这里假设 Post 实体中仍有 content 字段用于迁移
-                // 如果已删除 content 字段，需要从备份或其他地方获取内容
                 String content = getPostContent(post.getId());
-                
+
                 if (content == null || content.isEmpty()) {
                     log.warn("文章内容为空，跳过: postId={}", post.getId());
                     failCount++;
@@ -76,25 +82,32 @@ public class PostContentMigrationService {
     }
     
     /**
-     * 获取文章内容（用于迁移）
-     * 注意：这个方法需要根据实际情况实现
-     * 如果 content 字段已被删除，需要从备份或其他数据源获取
+     * 获取文章正文（用于迁移）
+     * <p>
+     * Post 实体在正文外置到 MinIO 之后就不再映射 {@code content} 字段了，所以这里走
+     * {@link PostMapper#selectRawContentById} 直接读原始列。
+     * <p>
+     * 该列在 {@code sql/migrate_post_content_to_minio.sql} 的「步骤4」里是可选删除的：
+     * 一旦线上真的 DROP 掉，本文服务就再没有数据源可用，此时**不要**假装迁移成功 ——
+     * 直接让调用方按失败处理，并把「需要从备份恢复」这件事打到日志里。
+     *
+     * @param postId 文章ID
+     * @return 正文原文；列不存在时返回 null
      */
     private String getPostContent(Long postId) {
-        // TODO: 根据实际情况实现
-        // 选项1: 如果 content 字段还存在，直接查询
-        // 选项2: 从备份数据库恢复
-        // 选项3: 从其他数据源获取
-        
-        Post post = postMapper.selectById(postId);
-        if (post != null) {
-            // 如果 content 字段还存在，返回它
-            // return post.getContent();
-            
-            // 如果已删除，返回 null
-            log.warn("需要从备份数据源获取文章内容: postId={}", postId);
+        if (contentColumnMissing) {
+            // 已经确认列不存在，不必每篇都再撞一次 SQL 异常
+            return null;
         }
-        
-        return null;
+
+        try {
+            return postMapper.selectRawContentById(postId);
+        } catch (Exception e) {
+            contentColumnMissing = true;
+            log.error("读取 t_post.content 失败，该列可能已被 DROP；" +
+                    "后续文章将全部跳过，需要先从备份恢复正文再重跑迁移。首次失败 postId={}",
+                    postId, e);
+            return null;
+        }
     }
 }
