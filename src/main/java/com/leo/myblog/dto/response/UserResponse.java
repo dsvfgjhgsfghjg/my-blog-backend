@@ -27,8 +27,18 @@ public class UserResponse {
     
     private String avatar;
     private Boolean isAdmin;
+
+    /**
+     * 账号是否启用
+     * <p>
+     * 列表接口的请求侧（GetUserListRequest）一直有 enabled 筛选参数，响应里却从来没下发过它 ——
+     * 于是前端表格无从回显，只能拿 isAdmin 当启用状态使（UserManagement.vue 里那句自认的注释），
+     * 结果是普通用户永远是「启用」、管理员永远是「禁用」，超管被误点一次就再没有入口启用自己。
+     */
+    private Boolean enabled;
+
     private LocalDateTime createTime;
-    
+
     /**
      * 从 User 实体转换为响应（应用脱敏）
      */
@@ -55,6 +65,7 @@ public class UserResponse {
         }
         
         response.setIsAdmin(user.getIsAdmin());
+        response.setEnabled(user.getEnabled());
         response.setCreateTime(user.getCreateTime());
         
         return response;
