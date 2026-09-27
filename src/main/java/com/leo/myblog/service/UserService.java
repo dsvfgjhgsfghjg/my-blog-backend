@@ -13,6 +13,7 @@ import com.leo.myblog.dto.response.UserResponse;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.enums.NotificationType;
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.exception.ForbiddenException;
 import com.leo.myblog.mapper.UserMapper;
 import com.leo.myblog.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -341,7 +342,7 @@ public class UserService {
         // 验证token中的用户名与请求中的用户名是否一致
         if (!username.equals(request.getUsername())) {
             log.warn("用户名验证失败：token中用户名={}, 请求中用户名={}", username, request.getUsername());
-            throw new BusinessException(403, "登录信息已经失效，请重新登录");
+            throw new ForbiddenException("登录信息已经失效，请重新登录");
         }
         
         // 验证旧密码
@@ -496,7 +497,7 @@ public class UserService {
         // 2. 验证操作者是否为管理员（能力验证已在Controller层完成）
         if (!Boolean.TRUE.equals(operator.getIsAdmin())) {
             log.warn("非管理员尝试修改用户权限: operatorId={}", operatorId);
-            throw new BusinessException("权限不足，需要管理员权限");
+            throw new ForbiddenException("权限不足，需要管理员权限");
         }
         
         // 3. 防止自我降级：管理员不能取消自己的管理员权限
@@ -560,7 +561,7 @@ public class UserService {
         // 2. 验证操作者是否为超级管理员
         if (!Boolean.TRUE.equals(operator.getIsSuperAdmin())) {
             log.warn("非超级管理员尝试设置超级管理员: operatorId={}", operatorId);
-            throw new BusinessException("权限不足，需要超级管理员权限");
+            throw new ForbiddenException("权限不足，需要超级管理员权限");
         }
         
         // 3. 防止自我操作：不能取消自己的超级管理员权限

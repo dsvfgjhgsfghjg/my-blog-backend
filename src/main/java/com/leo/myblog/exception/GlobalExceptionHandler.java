@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
@@ -54,7 +56,29 @@ public class GlobalExceptionHandler {
         
         return Result.error(e.getCode(), e.getMessage());
     }
-    
+
+    /**
+     * 处理权限拒绝异常（{@link ForbiddenException}）
+     * <p>
+     * 唯一的特殊之处是把 <b>HTTP 状态码也置成 403</b>，响应体结构
+     * {@code {code, message, data}} 与其它分支完全一致（前端读的是 {@code message}）。
+     * 前端 {@code utils/request.ts} 的 403 分支读的是 {@code error.response.status}，
+     * 而 {@code error.response.data.message} 就是这里给的消息，因此契约是闭环的。
+     * <p>
+     * 之所以只挑这一个子类，而不是把所有 code == 403 的 {@link BusinessException}
+     * 都映射成 HTTP 403：{@code PostServiceImpl} 里「文章不存在或无权访问」「文章正在审核中，暂不可见」
+     * 用的是显式 code 403 的 {@code BusinessException}，但它们是公开文章详情页的内容可见性规则，
+     * 前端页面读的是 {@code error.message}，一旦变成 HTTP 错误就会失配。详见 {@link ForbiddenException}。
+     * <p>
+     * 日志级别用 warn 而非 error：权限不足是预期内的拒绝，不是故障。
+     */
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<Result<?>> handleForbiddenException(ForbiddenException e, HttpServletRequest request) {
+        String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+        log.warn("权限拒绝 [{}] [{}]: {}", e.getCode(), requestId, e.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Result.error(e.getCode(), e.getMessage()));
+    }
+
     /**
      * 处理参数校验异常
      * 安全修复V6: 不暴露具体字段名，仅返回通用错误消息
@@ -160,11 +184,20 @@ public class GlobalExceptionHandler {
     
     /**
      * 处理权限拒绝异常
+     * <p>
+     * 与 {@link #handleForbiddenException} 同属「权限拒绝」，一并置 HTTP 403：
+     * 契约里不该出现「有的权限拒绝是 403、有的是 200+body code 403」。
+     * 变化仅限 HTTP 状态码，响应体仍是原来的 {@code {code:403, message:"无权访问该资源", data:null}}。
+     * <p>
+     * 当前代码里没有任何地方主动抛 {@code AccessDeniedException}
+     * （全项目只有这一处 import），Spring Security 的授权拒绝发生在过滤器链上、
+     * 进不到 {@code @RestControllerAdvice}，所以这个分支目前不会被命中 ——
+     * 改它不影响任何在线行为，只是把契约补齐。
      */
     @ExceptionHandler(AccessDeniedException.class)
-    public Result<?> handleAccessDeniedException(AccessDeniedException e) {
+    public ResponseEntity<Result<?>> handleAccessDeniedException(AccessDeniedException e) {
         log.warn("访问被拒绝: {}", e.getMessage());
-        return Result.error(403, "无权访问该资源");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Result.error(403, "无权访问该资源"));
     }
     
     /**

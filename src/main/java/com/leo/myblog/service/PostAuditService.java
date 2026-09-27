@@ -11,6 +11,7 @@ import com.leo.myblog.entity.PostAudit;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.enums.NotificationType;
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.exception.ForbiddenException;
 import com.leo.myblog.mapper.PostAuditMapper;
 import com.leo.myblog.mapper.PostMapper;
 import com.leo.myblog.util.AbilityValidator;
@@ -249,7 +250,7 @@ public class PostAuditService {
         }
         
         if (!userId.equals(post.getUserId()) && !Boolean.TRUE.equals(isAdmin)) {
-            throw new BusinessException("无权查看该文章的审计记录");
+            throw new ForbiddenException("无权查看该文章的审计记录");
         }
         
         // 2. 查询审计记录
@@ -294,7 +295,7 @@ public class PostAuditService {
         
         // 2. 验证权限：只有作者可以重新提交
         if (!userId.equals(post.getUserId())) {
-            throw new BusinessException("只有文章作者可以重新提交审核");
+            throw new ForbiddenException("只有文章作者可以重新提交审核");
         }
         
         // 3. 查询审计记录

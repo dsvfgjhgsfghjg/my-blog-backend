@@ -3,6 +3,7 @@ package com.leo.myblog.aspect;
 import com.leo.myblog.annotation.RequireAdmin;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.exception.ForbiddenException;
 import com.leo.myblog.service.UserCacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +47,9 @@ public class AdminAspect {
         // 验证：Token中的userId必须与SecurityContext中的userId一致
         if (!tokenUserId.equals(securityUserId)) {
             log.warn("Token userId不匹配: tokenUserId={}, securityUserId={}", tokenUserId, securityUserId);
-            throw new BusinessException(403, "登录信息已经失效，请重新登录");
+            // 与 JwtAuthenticationFilter / OAuth2AuthenticationFilter 里同样的场景：
+            // 那两处直接写 HTTP 403 + 同一条消息，这里保持一致（前端按这条消息清会话回登录页）
+            throw new ForbiddenException("登录信息已经失效，请重新登录");
         }
         
         // 使用缓存查询用户信息
@@ -58,7 +61,7 @@ public class AdminAspect {
         // 检查是否为管理员
         if (!user.getIsAdmin()) {
             log.warn("非管理员尝试访问管理员接口: userId={}, username={}", user.getId(), user.getUsername());
-            throw new BusinessException("权限不足，需要管理员权限");
+            throw new ForbiddenException("权限不足，需要管理员权限");
         }
         
         log.debug("管理员权限验证通过: userId={}, username={}", user.getId(), user.getUsername());

@@ -43,8 +43,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 挂上了真实的 {@link GlobalExceptionHandler} 与 JSR-303 校验器，
  * 为的是让「参数非法」「业务异常」走和线上一样的响应格式。
  * <p>
- * 注意本项目所有异常处理器都返回 HTTP 200，错误信息体现在 body 的 {@code code} 字段里，
- * 所以下面断言的是 {@code $.code} 而不是 HTTP 状态码。
+ * 注意业务异常一律返回 HTTP 200，错误信息体现在 body 的 {@code code} 字段里，
+ * 所以下面断言的是 {@code $.code} 而不是 HTTP 状态码。唯一的例外是
+ * {@link com.leo.myblog.exception.ForbiddenException}（权限拒绝），它会被映射成真正的
+ * HTTP 403；本类里用的是普通 {@code BusinessException(403, ...)}，因此下面的断言仍然成立
+ * （其映射规则见 {@code GlobalExceptionHandlerTest}）。
  * <p>
  * 这里**不覆盖** {@code @RequireAdmin} / {@code @RequireTotp} 这两个注解的效果 ——
  * 它们是切面，standalone 环境下不会织入。本类只验证路由、参数绑定、请求属性的取用，

@@ -8,6 +8,7 @@ import com.leo.myblog.entity.Ability;
 import com.leo.myblog.entity.SystemConfig;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.exception.ForbiddenException;
 import com.leo.myblog.mapper.AbilityMapper;
 import com.leo.myblog.mapper.SystemConfigMapper;
 import lombok.RequiredArgsConstructor;
@@ -277,7 +278,7 @@ public class SystemConfigService {
         // 1. 必须是管理员
         if (!Boolean.TRUE.equals(user.getIsAdmin())) {
             log.warn("非管理员尝试访问系统配置: userId={}", userId);
-            throw new BusinessException("权限不足，需要管理员权限");
+            throw new ForbiddenException("权限不足，需要管理员权限");
         }
         
         // 2. 检查是否为超级管理员
@@ -296,7 +297,7 @@ public class SystemConfigService {
         
         if (!hasPermission) {
             log.warn("管理员无系统配置管理权限: userId={}", userId);
-            throw new BusinessException("权限不足，需要管理系统配置的权限");
+            throw new ForbiddenException("权限不足，需要管理系统配置的权限");
         }
         
         log.debug("管理员权限验证通过: userId={}", userId);

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.leo.myblog.entity.Ability;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.exception.ForbiddenException;
 import com.leo.myblog.mapper.AbilityMapper;
 import com.leo.myblog.service.UserCacheService;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +40,7 @@ public class AbilityValidator {
         // 1. 必须是管理员
         if (!Boolean.TRUE.equals(user.getIsAdmin())) {
             log.warn("非管理员尝试执行需要能力的操作: userId={}, ability={}", userId, abilityName);
-            throw new BusinessException("权限不足，需要管理员权限");
+            throw new ForbiddenException("权限不足，需要管理员权限");
         }
         
         // 2. 超级管理员直接通过
@@ -56,7 +57,7 @@ public class AbilityValidator {
         
         if (count == 0) {
             log.warn("管理员缺少所需能力: userId={}, ability={}", userId, abilityName);
-            throw new BusinessException(String.format("权限不足，需要 [%s] 能力", getAbilityDescription(abilityName)));
+            throw new ForbiddenException(String.format("权限不足，需要 [%s] 能力", getAbilityDescription(abilityName)));
         }
         
         log.debug("能力验证通过: userId={}, ability={}", userId, abilityName);
@@ -76,7 +77,7 @@ public class AbilityValidator {
         
         // 1. 必须是管理员
         if (!Boolean.TRUE.equals(user.getIsAdmin())) {
-            throw new BusinessException("权限不足，需要管理员权限");
+            throw new ForbiddenException("权限不足，需要管理员权限");
         }
         
         // 2. 超级管理员直接通过
@@ -92,7 +93,7 @@ public class AbilityValidator {
         
         if (count == 0) {
             log.warn("管理员缺少所需能力: userId={}, abilities={}", userId, String.join(", ", abilityNames));
-            throw new BusinessException("权限不足，需要相关管理能力");
+            throw new ForbiddenException("权限不足，需要相关管理能力");
         }
     }
     
