@@ -27,38 +27,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     
     private final JwtUtil jwtUtil;
     private final TokenBlacklistService tokenBlacklistService;
-    
-    // 公开路径列表（无需认证即可访问，登录页需要绕过黑名单检查）
-    // 注意：PUT/POST/DELETE 方法的管理接口不应加入此列表，
-    // 否则 JWT 过滤器会跳过 Token 解析，导致 @RequireAdmin 等注解无法获取 userId
-    private static final String[] PUBLIC_PATHS = {
-        "/api/users/login",
-        "/api/users/register",
-        // 两步登录：必须跳过，否则浏览器里存有失效 AUTH_TOKEN Cookie 时，
-        // 本过滤器会取到该 token、校验失败并返回 403「登录信息已经失效」，
-        // 用户将连登录页都提交不了。与 /api/users/login 列入本清单同理。
-        "/api/auth/login/",
-        "/api/captcha/",
-        "/actuator/health",
-        "/api/audio/stream/",
-        "/api/audio/random",
-        "/api/audio/cover/",
-        "/api/posts/public",
-        "/api/posts/category/",
-        "/api/homepage/",
-        "/api/comments/post",
-        "/api/users/avatar/public/",
-        "/api/system/config/public"
-    };
-    
+    private final CookieSecurityConfig cookieSecurityConfig;
+
+    /**
+     * 公开路径统一由 {@link PublicPaths} 定义（含按 HTTP 方法区分，
+     * 避免把 PUT/DELETE 等管理接口一起跳过 —— 那会导致过滤器不解析 Token，
+     * @RequireAdmin 与 @RequestAttribute 拿不到 userId）。
+     *
+     * <p>本过滤器先于 Spring Security 的授权规则执行，因此这里的判定
+     * 直接决定了公开接口是否可达：浏览器里存有失效 Cookie 时，若公开路径
+     * 不出现在 {@link PublicPaths} 中，请求会被本过滤器拦成 403
+     * 「登录信息已经失效」，SecurityConfig 里的 permitAll 根本没机会生效。
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
-        for (String publicPath : PUBLIC_PATHS) {
-            if (path.startsWith(publicPath)) {
-                log.debug("公开路径，跳过JWT过滤器: {}", path);
-                return true;
-            }
+        if (PublicPaths.isPublic(request)) {
+            log.debug("公开路径，跳过JWT过滤器: {}", request.getRequestURI());
+            return true;
         }
         return false;
     }
@@ -146,9 +131,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
     
     /**
-     * 获取Cookie名称（与 CookieSecurityConfig 保持一致）
+     * 获取Cookie名称（委托给 CookieSecurityConfig，避免读写两侧不一致）
      */
     private String getCookieName() {
-        return "AUTH_TOKEN";
+        return cookieSecurityConfig.getCookieName();
     }
 }

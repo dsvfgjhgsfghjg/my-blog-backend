@@ -1,6 +1,7 @@
 package com.leo.myblog.controller;
 
 import com.leo.myblog.common.Result;
+import com.leo.myblog.config.CookieSecurityConfig;
 import com.leo.myblog.dto.response.UserSessionResponse;
 import com.leo.myblog.service.TokenSessionService;
 import com.leo.myblog.service.TotpService;
@@ -27,6 +28,7 @@ public class UserSessionController {
     private final TokenSessionService tokenSessionService;
     private final TotpService totpService;
     private final UserAgentParser userAgentParser;
+    private final CookieSecurityConfig cookieSecurityConfig;
     
     /**
      * 获取当前用户的所有活跃会话
@@ -171,7 +173,7 @@ public class UserSessionController {
                 jakarta.servlet.http.Cookie[] cookies = request.getCookies();
                 if (cookies != null) {
                     for (jakarta.servlet.http.Cookie cookie : cookies) {
-                        if ("AUTH_TOKEN".equals(cookie.getName())) {
+                        if (cookieSecurityConfig.getCookieName().equals(cookie.getName())) {
                             String token = cookie.getValue();
                             if (token != null && !token.isEmpty()) {
                                 log.debug("从HttpOnly Cookie中提取到Token");

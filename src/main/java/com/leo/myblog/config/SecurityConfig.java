@@ -107,6 +107,13 @@ public class SecurityConfig {
 
             // 配置授权规则
             .authorizeHttpRequests(auth -> auth
+                // 公开路径统一白名单（含按 HTTP 方法区分），与 JwtAuthenticationFilter /
+                // OAuth2AuthenticationFilter 的 shouldNotFilter 共用同一份定义。
+                // 必须声明在最前面：这里的规则是「首个命中即生效」，
+                // 下面 /api/auth2/token、/api/auth/app/bind 等 permitAll 正是靠声明顺序
+                // 抢在 /api/auth2/**、/api/auth/app/** 的 authenticated() 之前。
+                .requestMatchers(PublicPaths::isPublic).permitAll()
+
                 // 公开接口
                 .requestMatchers("/api/users/register", "/api/users/login").permitAll()
 

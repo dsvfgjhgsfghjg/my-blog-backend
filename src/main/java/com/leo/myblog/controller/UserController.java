@@ -211,7 +211,7 @@ public class UserController {
                 jakarta.servlet.http.Cookie[] cookies = request.getCookies();
                 if (cookies != null) {
                     for (jakarta.servlet.http.Cookie cookie : cookies) {
-                        if ("AUTH_TOKEN".equals(cookie.getName())) {
+                        if (cookieSecurityConfig.getCookieName().equals(cookie.getName())) {
                             String token = cookie.getValue();
                             if (token != null && !token.isEmpty()) {
                                 log.debug("从HttpOnly Cookie中提取到Token用于修改密码");

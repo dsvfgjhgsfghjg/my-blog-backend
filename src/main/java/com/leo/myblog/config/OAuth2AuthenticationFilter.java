@@ -36,73 +36,32 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final TokenBlacklistService tokenBlacklistService;
     private final OAuth2TokenService oAuth2TokenService;
+    private final CookieSecurityConfig cookieSecurityConfig;
 
     public OAuth2AuthenticationFilter(JwtUtil jwtUtil,
                                        TokenBlacklistService tokenBlacklistService,
-                                       @Lazy OAuth2TokenService oAuth2TokenService) {
+                                       @Lazy OAuth2TokenService oAuth2TokenService,
+                                       CookieSecurityConfig cookieSecurityConfig) {
         this.jwtUtil = jwtUtil;
         this.tokenBlacklistService = tokenBlacklistService;
         this.oAuth2TokenService = oAuth2TokenService;
+        this.cookieSecurityConfig = cookieSecurityConfig;
     }
 
     /**
-     * 公开路径列表（无需认证即可访问）
+     * 公开路径统一由 {@link PublicPaths} 定义（与 SecurityConfig、JwtAuthenticationFilter 共用一份）。
+     * 原先把 OAuth2 公开路径和「其他公开路径」拆成两个数组各写一份，已合并。
      */
-    private static final String[] PUBLIC_PATHS = {
-            "/api/auth2/token",
-            "/api/auth2/oauth/login",
-            "/api/auth2/oauth/callback"
-    };
-
-    // 其他公开路径（与 SecurityConfig 中的公开接口保持一致）
-    private static final String[] OTHER_PUBLIC_PATHS = {
-        "/api/users/login",
-        "/api/users/register",
-        // 两步登录：必须跳过，否则浏览器里存有失效 AUTH_TOKEN Cookie 时，
-        // 过滤器会取到该 token、校验失败并直接返回 403「登录信息已经失效」，
-        // 导致用户连登录页都提交不了（前端 403 处理还会把他重定向回 /login，形成死循环）。
-        // 与 /api/users/login、/api/auth2/token 被列入本清单是同一个原因。
-        "/api/auth/login/",
-        "/api/captcha/",
-        "/actuator/health",
-        "/api/images/stream/",
-        "/api/audio/stream/",
-        "/api/audio/random",
-        "/api/audio/cover/",
-        "/api/blogger/info",
-        "/api/blogger/avatar",
-        "/api/posts/public",
-        "/api/posts/category/",
-        "/api/homepage/",
-        "/api/comments/post",
-        "/api/users/avatar/public/",
-        "/api/system/config/public",
-        "/api/public/sayings/"
-    };
-
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
-        String method = request.getMethod();
-
-        // OAuth2 公开路径跳过
-        for (String publicPath : PUBLIC_PATHS) {
-            if (path.startsWith(publicPath)) {
-                log.debug("OAuth2 公开路径，跳过过滤器: {}", path);
-                return true;
-            }
+        // 公开路径跳过（避免浏览器携带过期 Cookie 导致 403）
+        if (PublicPaths.isPublic(request)) {
+            log.debug("OAuth2 过滤器跳过公开路径: {}", request.getRequestURI());
+            return true;
         }
 
-        // 其他公开接口跳过（避免浏览器携带过期 Cookie 导致 403）
-        for (String publicPath : OTHER_PUBLIC_PATHS) {
-            if (path.startsWith(publicPath)) {
-                log.debug("OAuth2 过滤器跳过公开路径: {}", path);
-                return true;
-            }
-        }
-
-        // OPTIONS 请求跳过
-        if ("OPTIONS".equalsIgnoreCase(method)) {
+        // OPTIONS 请求跳过（保留原有行为）
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
 
@@ -198,8 +157,9 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
         // 2. 兜底从 HttpOnly Cookie 提取（前端用 Cookie 模式时）
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
+            String cookieName = cookieSecurityConfig.getCookieName();
             for (Cookie cookie : cookies) {
-                if ("AUTH_TOKEN".equals(cookie.getName())) {
+                if (cookieName.equals(cookie.getName())) {
                     String token = cookie.getValue();
                     if (token != null && !token.isEmpty()) {
                         log.debug("从HttpOnly Cookie中提取到OAuth2 Token");
