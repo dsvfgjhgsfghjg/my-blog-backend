@@ -314,13 +314,32 @@ class PostAuditServiceTest {
 
             PostListItemResponse item = new PostListItemResponse();
             item.setTitle("测试文章");
-            when(postResponseConverter.convertToPostListItemResponse(post)).thenReturn(item);
+            when(postResponseConverter.convertAll(List.of(post))).thenReturn(List.of(item));
 
             PageResult<PostListItemResponse> result = postAuditService.getPendingPosts(AUDITOR_ID, 1, 20);
 
             assertEquals(1, result.getRecords().size());
             assertEquals("测试文章", result.getRecords().get(0).getTitle());
             assertEquals("1", result.getTotal());
+        }
+
+        @Test
+        @DisplayName("走批量转换，不逐篇调用（否则每篇一次分类/标签查询，是 N+1）")
+        void usesBatchConversion() {
+            when(postAuditMapper.selectPage(any(), any())).thenAnswer(inv -> {
+                Page<PostAudit> page = inv.getArgument(0);
+                page.setRecords(List.of(pendingAudit()));
+                page.setTotal(1);
+                return page;
+            });
+            when(postMapper.selectList(any())).thenReturn(List.of(post));
+            when(postResponseConverter.convertAll(List.of(post)))
+                    .thenReturn(List.of(new PostListItemResponse()));
+
+            postAuditService.getPendingPosts(AUDITOR_ID, 1, 20);
+
+            verify(postResponseConverter).convertAll(List.of(post));
+            verify(postResponseConverter, never()).convertToPostListItemResponse(any());
         }
     }
 

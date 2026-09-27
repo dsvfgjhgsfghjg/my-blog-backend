@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -209,17 +210,21 @@ public class PostAuditService {
         postWrapper.in(Post::getId, postIds);
         List<Post> posts = postMapper.selectList(postWrapper);
 
-        // 4. 按**审计记录的顺序**（create_time 倒序）转换，而不是按 selectList 的返回顺序。
+        // 4. 转换。用批量版本，分类与标签各只查一次 —— 逐篇调单篇版会是 N+1。
+        //    convertAll 保持入参顺序，所以下面按下标与原 posts 对齐即可。
+        List<PostListItemResponse> converted = postResponseConverter.convertAll(posts);
+        Map<Long, PostListItemResponse> responseById = new HashMap<>();
+        for (int i = 0; i < posts.size(); i++) {
+            responseById.put(posts.get(i).getId(), converted.get(i));
+        }
+
+        // 5. 按**审计记录的顺序**（create_time 倒序）输出，而不是按 selectList 的返回顺序。
         //    IN (...) 查询不保证返回顺序，直接用 posts 的遍历顺序会让分页结果的先后跟
         //    排序规则对不上 —— 同一页里最早提交的可能排在最前面，翻页时看起来像乱序。
         //    另外被逻辑删除的文章不会出现在 posts 里，所以按 postIds 取、取不到就跳过。
-        Map<Long, Post> postById = posts.stream()
-                .collect(Collectors.toMap(Post::getId, p -> p, (a, b) -> a));
-
         List<PostListItemResponse> responseList = postIds.stream()
-                .map(postById::get)
+                .map(responseById::get)
                 .filter(Objects::nonNull)
-                .map(postResponseConverter::convertToPostListItemResponse)
                 .collect(Collectors.toList());
 
         // 5. 构建分页结果
