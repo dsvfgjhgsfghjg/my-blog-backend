@@ -381,11 +381,18 @@ Completed:
   this status-document commit.
 - Gitea frontend `master` is `1219eeb`; the security branch is `c6cc41f`.
 - The App handoff-only commit `1c79923` was pushed to the App repository.
+- The removed dump was restored in a one-off isolated PostgreSQL container and
+  inspected using aggregate queries only. It contains 4 users, 4 password hashes,
+  2 last-login IP addresses, 1 blogger email address, 24 posts, and 23 comments
+  with body content. User rows contain no email or phone values.
+- The temporary dump copy and inspection clone were securely removed after the
+  aggregate assessment.
 
 Not completed:
 
-- The current network blocks GitHub Git smart-HTTP, so the public mirror still
-  points at the old history. Gitea is clean, but the public exposure is not closed.
+- GitHub Git upload is reset by the current network and no usable GitHub write
+  credential is configured. The public mirror still points at the old history,
+  so the public exposure is not closed.
 - Gitea server-side garbage collection and cache/artifact cleanup require server
   administrator access.
 - Production still serves the old CORS behavior: a request with
@@ -406,8 +413,8 @@ These items cannot be completed by source changes alone:
    and source archives that may retain old objects.
 4. Revoke the exposed SSH, Git Runner, JWT, database, Redis, MinIO, and administrator
    credentials before deploying replacement values.
-5. Inspect the removed PostgreSQL dump in an isolated environment for personal data
-   and determine whether disclosure notification is required.
+5. Complete the disclosure assessment for the exposed dump using the aggregate
+   findings above; do not copy the dump back into either repository.
 6. Deploy the backend migrations and images, then the frontend image, and verify
    login, refresh, logout, registration, TOTP, App native WebSocket, and file access.
 7. Verify from an external host that PostgreSQL, Redis, MinIO, and the backend port
