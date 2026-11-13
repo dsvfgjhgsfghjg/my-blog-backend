@@ -27,5 +27,19 @@ Preferred workflow:
 5. Revoke the Gitea token and run `scripts/security/remove-gitea-token.sh` when
    maintenance is complete.
 
+Account/password environment fallback:
+
+1. Run `scripts/security/store-gitea-account.sh` in a local interactive terminal.
+2. Enter the username and password without putting secrets in the prompt.
+3. The script atomically writes `~/.config/myblog/gitea.env` with mode `0600`.
+4. It installs a credential-free loader block in `~/.bashrc` for future local
+   Fedora terminals.
+5. `scripts/security/gitea-api.sh` loads the file automatically.
+6. To load the values into the current terminal, use
+   `source scripts/security/load-gitea-env.sh`.
+
+Environment variables can be inherited by child processes, so prefer the system
+keyring token whenever possible. Never commit the generated environment file.
+
 Plain HTTP is rejected except for loopback endpoints. If Gitea is not available
 over HTTPS or a local SSH tunnel, do not send credentials to it.

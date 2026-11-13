@@ -3,10 +3,12 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-Usage: GITEA_API_URL=<url> scripts/security/gitea-api.sh <GET|POST> <path>
+Usage: scripts/security/gitea-api.sh <GET|POST> <path>
 
-The token is read from the system keyring and is never printed or placed in
-command-line arguments. Plain HTTP is accepted only for loopback addresses.
+Authentication uses the system keyring token when available, otherwise the
+Gitea username/password loaded from the private environment file. Secrets are
+never printed or placed in command-line arguments. Plain HTTP is accepted only
+for loopback addresses.
 EOF
 }
 
@@ -33,11 +35,15 @@ case "$path" in
     ;;
 esac
 
-base_url="${GITEA_API_URL:-}"
-if [ -z "$base_url" ]; then
-  echo "GITEA_API_URL is required" >&2
-  exit 2
+env_file="${GITEA_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/myblog/gitea.env}"
+if [ -r "$env_file" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$env_file"
+  set +a
 fi
+
+base_url="${GITEA_API_URL:-${GITEA_URL:-https://leo-blog.top/gitea}}"
 base_url=${base_url%/}
 
 case "$base_url" in
@@ -57,24 +63,37 @@ esac
 service_name="${GITEA_SECRET_SERVICE:-myblog-gitea}"
 account_name="${GITEA_SECRET_ACCOUNT:-automation}"
 token=$(secret-tool lookup service "$service_name" account "$account_name" 2>/dev/null || true)
-if [ -z "$token" ]; then
-  echo "No Gitea token is stored; run scripts/security/store-gitea-token.sh first" >&2
-  exit 1
-fi
 
-if ! printf '%s' "$token" | grep -Eq '^[A-Za-z0-9._~-]+$'; then
+if [ -n "$token" ] && ! printf '%s' "$token" | grep -Eq '^[A-Za-z0-9._~-]+$'; then
   unset token
   echo "Stored Gitea token has an unexpected format" >&2
   exit 1
 fi
 
-curl_config=$(
-  printf 'url = "%s%s"\n' "$base_url" "$path"
+if [ -z "$token" ] && { [ -z "${GITEA_USERNAME:-}" ] || [ -z "${GITEA_PASSWORD:-}" ]; }; then
+  echo "No Gitea authentication is configured" >&2
+  echo "Run scripts/security/store-gitea-account.sh or store-gitea-token.sh first" >&2
+  exit 1
+fi
+
+escape_curl_value() {
+  local value=$1
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  printf '%s' "$value"
+}
+
+{
+  printf 'url = "%s%s"\n' "$(escape_curl_value "$base_url")" "$(escape_curl_value "$path")"
   printf 'request = "%s"\n' "$method"
   printf 'header = "Accept: application/json"\n'
-  printf 'header = "Authorization: token %s"\n' "$token"
+  if [ -n "$token" ]; then
+    printf 'header = "Authorization: token %s"\n' "$(escape_curl_value "$token")"
+  else
+    printf 'user = "%s:%s"\n' \
+      "$(escape_curl_value "$GITEA_USERNAME")" \
+      "$(escape_curl_value "$GITEA_PASSWORD")"
+  fi
   printf 'silent\nshow-error\nfail-with-body\nmax-time = 30\n'
-)
+} | curl --config -
 unset token
-
-printf '%s\n' "$curl_config" | curl --config -
