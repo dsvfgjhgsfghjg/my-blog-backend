@@ -105,6 +105,24 @@ cd /home/leo/WebstormProjects/myblog
 npm run build
 ```
 
-## Local Code Search
+## Local Code Search and Memory
 
-A vector database is not required for the current repository size. Start with IDE indexing, `rg`, and the curated engineering docs. If semantic recall becomes a demonstrated bottleneck, add a local-only, gitignored index and exclude secrets, dumps, logs, and generated assets.
+Start with IDE indexing and `rg` for exact code/configuration lookup.
+
+For cross-session context, maintain sanitized handoffs in `memory/`. The local
+vector index is stored outside Git at:
+
+```text
+~/.local/share/myblog-memory/knowledge.sqlite3
+```
+
+It indexes only `memory/`, `docs/engineering/`, `docs/app-handoffs/`, and
+`AGENTS.md`. It must never index secrets, `.env`, backups, `.claude`, dumps,
+logs, generated assets, or the whole repository.
+
+Rebuild and search:
+
+```bash
+python3 scripts/memory/build_vectors.py
+python3 scripts/memory/search_vectors.py "next production security action"
+```
