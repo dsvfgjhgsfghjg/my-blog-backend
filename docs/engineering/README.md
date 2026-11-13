@@ -100,6 +100,7 @@ Run `npm run build` and `npm run test:e2e` for frontend changes.
 - Security audit: `docs/engineering/SECURITY_AUDIT_20261112.md`
 - Security release runbook: `docs/engineering/SECURITY_RELEASE_RUNBOOK_20261113.md`
 - Deployment follow-ups: `docs/engineering/DEPLOYMENT_FOLLOWUPS.md`
+- Production cutover record: `docs/engineering/PRODUCTION_CUTOVER_20261113.md`
 
 ## 6. Local Search and Vector Store Decision
 
