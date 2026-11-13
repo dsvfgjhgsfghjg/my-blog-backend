@@ -3,12 +3,13 @@ package com.leo.myblog.controller;
 import com.leo.myblog.common.Result;
 import com.leo.myblog.config.CookieSecurityConfig;
 import com.leo.myblog.dto.request.OAuth2TokenRequest;
-import com.leo.myblog.dto.request.ThirdPartyLoginRequest;
 import com.leo.myblog.dto.response.AbilityResponse;
 import com.leo.myblog.dto.response.OAuth2TokenResponse;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.service.*;
+import com.leo.myblog.security.ClientIpResolver;
+import com.leo.myblog.service.SecurityMetricsService;
 import com.leo.myblog.util.JwtUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,7 +17,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
  * 兼容现有认证体系，支持多种 grant_type
  *
  * 端点列表:
- * - POST /api/auth2/token          颁发 Token（password/client_credentials/authorization_code）
+ * - POST /api/auth2/token          颁发 Token（password/authorization_code）
  * - POST /api/auth2/token/refresh  刷新 Token
  * - POST /api/auth2/token/revoke   撤销 Token
  * - GET  /api/auth2/token/info     查询 Token 信息
@@ -50,23 +50,21 @@ public class OAuth2Controller {
     private final UserCacheService userCacheService;
     private final CookieSecurityConfig cookieSecurityConfig;
     private final AbilityService abilityService;
-
-    @Value("${jwt.cookie.expose-token-in-body:true}")
-    private boolean exposeTokenInBody;
+    private final ClientIpResolver clientIpResolver;
+    private final SecurityMetricsService securityMetricsService;
 
     /**
      * 颁发 Token
      *
      * 支持 grant_type:
      * - password: 用户名密码 + 验证码登录
-     * - client_credentials: 客户端凭证模式（M2M）
      * - authorization_code: 授权码模式（第三方应用接入）
      */
     @PostMapping("/token")
     public Result<OAuth2TokenResponse> token(@Valid @RequestBody OAuth2TokenRequest request,
                                               HttpServletRequest httpRequest,
                                               HttpServletResponse httpResponse) {
-        String clientIp = getClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
         String userAgent = httpRequest.getHeader("User-Agent");
 
         log.info("OAuth2 Token 请求: grantType={}, username={}, clientId={}",
@@ -79,13 +77,11 @@ public class OAuth2Controller {
             Cookie authCookie = cookieSecurityConfig.createSecureCookie(response.getAccessToken());
             httpResponse.addCookie(authCookie);
         }
-
-        // 根据配置决定是否在 JSON 响应体中暴露 Token
-        if (!exposeTokenInBody) {
-            response.setAccessToken(null);
-            response.setTokenType(null);
-            response.setRefreshToken(null);
+        if (response.getRefreshToken() != null) {
+            Cookie refreshCookie = cookieSecurityConfig.createRefreshCookie(response.getRefreshToken());
+            httpResponse.addCookie(refreshCookie);
         }
+        hideBrowserTokens(response);
 
         return Result.success("Token 颁发成功", response);
     }
@@ -94,26 +90,32 @@ public class OAuth2Controller {
      * 刷新 Token
      */
     @PostMapping("/token/refresh")
-    public Result<OAuth2TokenResponse> refreshToken(@Valid @RequestBody OAuth2TokenRequest request,
+    public Result<OAuth2TokenResponse> refreshToken(@RequestBody(required = false) OAuth2TokenRequest request,
+                                                     HttpServletRequest httpRequest,
                                                      HttpServletResponse httpResponse) {
         log.info("OAuth2 刷新 Token 请求");
-
-        // 复用 OAuth2TokenService 的 refresh_token grant
+        if (request == null) {
+            request = new OAuth2TokenRequest();
+        }
+        if (request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
+            request.setRefreshToken(extractCookie(httpRequest, cookieSecurityConfig.getRefreshCookieName()));
+        }
+        if (request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
+            throw new BusinessException(401, "refresh_token 缺失或已过期");
+        }
         request.setGrantType("refresh_token");
         OAuth2TokenResponse response = oAuth2TokenService.issueToken(request, null, null);
 
-        // 将新 Token 设置到 HttpOnly Cookie 中
         if (response.getAccessToken() != null) {
             Cookie authCookie = cookieSecurityConfig.createSecureCookie(response.getAccessToken());
             httpResponse.addCookie(authCookie);
         }
-
-        // 根据配置决定是否在 JSON 响应体中暴露 Token
-        if (!exposeTokenInBody) {
-            response.setAccessToken(null);
-            response.setTokenType(null);
-            response.setRefreshToken(null);
+        if (response.getRefreshToken() != null) {
+            Cookie refreshCookie = cookieSecurityConfig.createRefreshCookie(response.getRefreshToken());
+            httpResponse.addCookie(refreshCookie);
         }
+        hideBrowserTokens(response);
+        securityMetricsService.tokenRefresh("success");
 
         return Result.success("Token 刷新成功", response);
     }
@@ -130,9 +132,12 @@ public class OAuth2Controller {
                                      HttpServletRequest request,
                                      HttpServletResponse httpResponse) {
         String accessToken = body != null ? body.get("access_token") : null;
+        String refreshToken = body != null ? body.get("refresh_token") : null;
         if (accessToken == null || accessToken.trim().isEmpty()) {
-            // 兜底：从 Cookie / Authorization 头取
             accessToken = extractBearerToken(request);
+        }
+        if (refreshToken == null || refreshToken.trim().isEmpty()) {
+            refreshToken = extractCookie(request, cookieSecurityConfig.getRefreshCookieName());
         }
 
         if (accessToken == null || accessToken.trim().isEmpty()) {
@@ -141,10 +146,14 @@ public class OAuth2Controller {
             log.info("OAuth2 撤销 Token 请求");
             oAuth2TokenService.revokeToken(accessToken);
         }
+        if (refreshToken != null && !refreshToken.trim().isEmpty()) {
+            oAuth2TokenService.revokeRefreshToken(refreshToken);
+        }
 
-        // 清除 HttpOnly Cookie
         Cookie clearCookie = cookieSecurityConfig.createClearCookie();
         httpResponse.addCookie(clearCookie);
+        Cookie clearRefreshCookie = cookieSecurityConfig.createClearRefreshCookie();
+        httpResponse.addCookie(clearRefreshCookie);
 
         return Result.success("Token 已撤销", null);
     }
@@ -246,34 +255,13 @@ public class OAuth2Controller {
                     "avatar", user.getAvatar() != null ? user.getAvatar() : "",
                     "email", user.getEmail() != null ? user.getEmail() : "",
                     "is_admin", user.getIsAdmin() != null ? user.getIsAdmin() : false,
+                    "is_super_admin", user.getIsSuperAdmin() != null ? user.getIsSuperAdmin() : false,
                     "abilities", abilities
             );
             return Result.success(userInfo);
         } catch (Exception e) {
             return Result.error(401, "Token 无效或已过期");
         }
-    }
-
-    /**
-     * 第三方 OAuth 登录入口
-     * 前端调用此接口获取第三方登录的跳转 URL
-     */
-    @PostMapping("/oauth/login")
-    public Result<Map<String, String>> oauthLogin(@Valid @RequestBody ThirdPartyLoginRequest request) {
-        String provider = request.getProvider();
-        String redirectUri = request.getRedirectUri();
-
-        log.info("第三方 OAuth 登录请求: provider={}", provider);
-
-        // 目前支持 GitHub 和 Google
-        if (!"github".equals(provider) && !"google".equals(provider)) {
-            return Result.error(400, "不支持的第三方平台: " + provider);
-        }
-
-        // 返回授权页面的跳转 URL（前端处理跳转）
-        String authorizeUrl = buildAuthorizeUrl(provider, redirectUri);
-        return Result.success("获取授权URL成功",
-                java.util.Map.of("authorize_url", authorizeUrl));
     }
 
     // ==================== 内部方法 ====================
@@ -306,6 +294,26 @@ public class OAuth2Controller {
         return null;
     }
 
+    private String extractCookie(HttpServletRequest request, String name) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        for (Cookie cookie : cookies) {
+            if (name.equals(cookie.getName()) && cookie.getValue() != null
+                    && !cookie.getValue().isEmpty()) {
+                return cookie.getValue();
+            }
+        }
+        return null;
+    }
+
+    private void hideBrowserTokens(OAuth2TokenResponse response) {
+        response.setAccessToken(null);
+        response.setRefreshToken(null);
+        response.setTokenType(null);
+    }
+
     /**
      * 从当前请求中获取登录用户 ID
      */
@@ -321,62 +329,4 @@ public class OAuth2Controller {
         }
     }
 
-    /**
-     * 构建第三方授权 URL
-     */
-    private String buildAuthorizeUrl(String provider, String redirectUri) {
-        // 这些参数应该从配置中读取，这里简化处理
-        String clientId = "";
-        String callbackUrl = "";
-
-        if ("github".equals(provider)) {
-            clientId = System.getenv("GITHUB_CLIENT_ID");
-            if (clientId == null || clientId.isEmpty()) {
-                clientId = "${GITHUB_CLIENT_ID}";
-            }
-            callbackUrl = System.getenv("GITHUB_REDIRECT_URI");
-            if (callbackUrl == null || callbackUrl.isEmpty()) {
-                callbackUrl = "http://localhost:3000/auth/oauth/github/callback";
-            }
-            return "https://github.com/login/oauth/authorize" +
-                    "?client_id=" + clientId +
-                    "&redirect_uri=" + callbackUrl +
-                    "&scope=user:email" +
-                    "&state=" + (redirectUri != null ? redirectUri : "");
-        } else if ("google".equals(provider)) {
-            clientId = System.getenv("GOOGLE_CLIENT_ID");
-            if (clientId == null || clientId.isEmpty()) {
-                clientId = "${GOOGLE_CLIENT_ID}";
-            }
-            callbackUrl = System.getenv("GOOGLE_REDIRECT_URI");
-            if (callbackUrl == null || callbackUrl.isEmpty()) {
-                callbackUrl = "http://localhost:3000/auth/oauth/google/callback";
-            }
-            return "https://accounts.google.com/o/oauth2/v2/auth" +
-                    "?client_id=" + clientId +
-                    "&redirect_uri=" + callbackUrl +
-                    "&response_type=code" +
-                    "&scope=openid%20email%20profile" +
-                    "&state=" + (redirectUri != null ? redirectUri : "");
-        }
-
-        throw new BusinessException("不支持的第三方平台: " + provider);
-    }
-
-    /**
-     * 获取客户端真实 IP
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip != null ? ip : "unknown";
-    }
 }

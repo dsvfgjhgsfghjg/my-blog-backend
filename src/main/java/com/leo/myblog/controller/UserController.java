@@ -24,6 +24,9 @@ import com.leo.myblog.service.AbilityService;
 import com.leo.myblog.service.AvatarUploadService;
 import com.leo.myblog.service.TokenBlacklistService;
 import com.leo.myblog.service.UserService;
+import com.leo.myblog.service.OAuth2TokenService;
+import com.leo.myblog.service.RegistrationRateLimitService;
+import com.leo.myblog.security.ClientIpResolver;
 import com.leo.myblog.util.AbilityValidator;
 import com.leo.myblog.util.ImageContentTypeUtils;
 import jakarta.servlet.http.Cookie;
@@ -56,19 +59,20 @@ public class UserController {
     private final com.leo.myblog.util.JwtUtil jwtUtil;
     private final AbilityValidator abilityValidator;
     private final CookieSecurityConfig cookieSecurityConfig;
-    
-    @Value("${jwt.cookie.expose-token-in-body:true}")
-    private boolean exposeTokenInBody;
+    private final ClientIpResolver clientIpResolver;
+    private final OAuth2TokenService oAuth2TokenService;
+    private final RegistrationRateLimitService registrationRateLimitService;
     
     /**
      * 用户注册
      */
     @PostMapping("/register")
-    public Result<LoginResponse> register(@Valid @RequestBody(required = false) RegisterRequest request) {
+    public Result<Long> register(@Valid @RequestBody(required = false) RegisterRequest request) {
         if (request == null) {
             return Result.error(400, "请求体不能为空，请提供用户名和密码");
         }
-        return Result.success("注册成功", userService.register(request));
+        registrationRateLimitService.checkAndRecord(clientIpResolver.resolveCurrentRequest());
+        return Result.success("注册成功，请登录", userService.register(request));
     }
     
     /**
@@ -84,14 +88,10 @@ public class UserController {
         Cookie authCookie = cookieSecurityConfig.createSecureCookie(loginResponse.getToken());
         response.addCookie(authCookie);
         
-        // 安全增强：根据配置决定是否在JSON响应体中暴露Token（Cookie模式下建议屏蔽）
-        if (!exposeTokenInBody) {
-            loginResponse.setToken(null);
-            loginResponse.setTokenType(null);
-        }
+        loginResponse.setToken(null);
+        loginResponse.setTokenType(null);
         
-        log.info("用户登录成功，已设置HttpOnly Cookie: userId={}, exposeTokenInBody={}", 
-                loginResponse.getUserId(), exposeTokenInBody);
+        log.info("用户登录成功，已设置HttpOnly Cookie: userId={}", loginResponse.getUserId());
         
         return Result.success("登录成功", loginResponse);
     }
@@ -122,7 +122,7 @@ public class UserController {
         }
         
         // 获取当前请求的IP地址
-        String currentIp = getClientIpAddress();
+        String currentIp = clientIpResolver.resolveCurrentRequest();
         
         LoginInfoResponse response = new LoginInfoResponse();
         response.setUserId(user.getId());
@@ -206,6 +206,10 @@ public class UserController {
      * 从HttpOnly Cookie提取JWT Token
      */
     private String extractTokenFromCookie() {
+        return extractCookie(cookieSecurityConfig.getCookieName());
+    }
+
+    private String extractCookie(String cookieName) {
         try {
             org.springframework.web.context.request.ServletRequestAttributes attributes = 
                 (org.springframework.web.context.request.ServletRequestAttributes) 
@@ -215,10 +219,10 @@ public class UserController {
                 jakarta.servlet.http.Cookie[] cookies = request.getCookies();
                 if (cookies != null) {
                     for (jakarta.servlet.http.Cookie cookie : cookies) {
-                        if (cookieSecurityConfig.getCookieName().equals(cookie.getName())) {
+                        if (cookieName.equals(cookie.getName())) {
                             String token = cookie.getValue();
                             if (token != null && !token.isEmpty()) {
-                                log.debug("从HttpOnly Cookie中提取到Token用于修改密码");
+                                log.debug("从HttpOnly Cookie中提取到Token: {}", cookieName);
                                 return token;
                             }
                         }
@@ -274,10 +278,16 @@ public class UserController {
             
             log.info("Token已加入黑名单，用户注销成功: userId={}, 剩余有效期={}秒", userId, remainingSeconds);
         }
+
+        String refreshToken = extractCookie(cookieSecurityConfig.getRefreshCookieName());
+        if (refreshToken != null) {
+            oAuth2TokenService.revokeRefreshToken(refreshToken);
+        }
         
         // 清除HttpOnly Cookie
         Cookie clearCookie = cookieSecurityConfig.createClearCookie();
         response.addCookie(clearCookie);
+        response.addCookie(cookieSecurityConfig.createClearRefreshCookie());
         
         log.info("已清除HttpOnly Cookie，用户注销完成: userId={}", userId);
         
@@ -438,45 +448,6 @@ public class UserController {
             log.error("公开获取头像失败: userId={}", userId, e);
             return ResponseEntity.status(500).body(null);
         }
-    }
-    
-    /**
-     * 获取客户端IP地址
-     */
-    private String getClientIpAddress() {
-        try {
-            org.springframework.web.context.request.ServletRequestAttributes attributes = 
-                (org.springframework.web.context.request.ServletRequestAttributes) 
-                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-            if (attributes != null) {
-                jakarta.servlet.http.HttpServletRequest request = attributes.getRequest();
-                
-                // 尝试从代理头中获取真实IP
-                String ip = request.getHeader("X-Forwarded-For");
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("X-Real-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("Proxy-Client-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("WL-Proxy-Client-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getRemoteAddr();
-                }
-                
-                // 对于通过多个代理的情况，第一个IP为客户端真实IP
-                if (ip != null && ip.contains(",")) {
-                    ip = ip.split(",")[0].trim();
-                }
-                
-                return ip;
-            }
-        } catch (Exception e) {
-            log.warn("获取客户端IP失败", e);
-        }
-        return "unknown";
     }
     
     // ==================== 管理员接口 ====================

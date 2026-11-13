@@ -15,9 +15,12 @@ public class RegisterRequest {
     private String username;
     
     @NotBlank(message = "密码不能为空")
-    @Size(min = 6, max = 100, message = "密码长度必须在6-100之间")
+    @Size(min = 10, max = 128, message = "密码长度必须在10-128之间")
     private String password;
     
     @Size(max = 50, message = "昵称长度不能超过50")
     private String nickname;
+
+    @NotBlank(message = "邀请码不能为空")
+    private String inviteCode;
 }

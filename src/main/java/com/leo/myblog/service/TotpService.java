@@ -1,6 +1,7 @@
 package com.leo.myblog.service;
 
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.security.SecretEncryptionService;
 import com.warrenstrange.googleauth.GoogleAuthenticator;
 import com.warrenstrange.googleauth.GoogleAuthenticatorConfig;
 import com.warrenstrange.googleauth.GoogleAuthenticatorKey;
@@ -8,7 +9,9 @@ import com.warrenstrange.googleauth.GoogleAuthenticatorQRGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -21,6 +24,9 @@ public class TotpService {
     
     private final GoogleAuthenticator gAuth;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final SecretEncryptionService encryptionService;
+    private final BCryptPasswordEncoder backupCodeEncoder = new BCryptPasswordEncoder();
+    private final SecureRandom secureRandom = new SecureRandom();
     
     // Redis Key 前缀
     private static final String TOTP_SECRET_PREFIX = "totp:secret:";
@@ -32,8 +38,10 @@ public class TotpService {
     // 备份码有效期：30天
     private static final long BACKUP_CODE_EXPIRE_DAYS = 30;
     
-    public TotpService(RedisTemplate<String, Object> redisTemplate) {
+    public TotpService(RedisTemplate<String, Object> redisTemplate,
+                       SecretEncryptionService encryptionService) {
         this.redisTemplate = redisTemplate;
+        this.encryptionService = encryptionService;
         // 配置 GoogleAuthenticator，允许 ±2 个时间窗口（±60秒）的误差
         GoogleAuthenticatorConfig config = new GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder()
             .setTimeStepSizeInMillis(30000)  // 30秒时间窗口
@@ -62,10 +70,11 @@ public class TotpService {
         
         // 4. 保存到 Redis（临时存储，等待用户确认）
         String secretKey = TOTP_SECRET_PREFIX + userId;
-        redisTemplate.opsForValue().set(secretKey, secret, 10, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(secretKey, encryptionService.encrypt(secret),
+                10, TimeUnit.MINUTES);
         
         String backupKey = TOTP_BACKUP_CODES_PREFIX + userId;
-        redisTemplate.opsForValue().set(backupKey, String.join(",", backupCodes), 
+        redisTemplate.opsForValue().set(backupKey, hashBackupCodes(backupCodes),
                 BACKUP_CODE_EXPIRE_DAYS, TimeUnit.DAYS);
         
         // 5. 生成二维码 URL（兼容 Microsoft Authenticator）
@@ -89,7 +98,8 @@ public class TotpService {
     public boolean enableTotp(Long userId, String code) {
         // 1. 获取临时密钥
         String secretKey = TOTP_SECRET_PREFIX + userId;
-        String secret = (String) redisTemplate.opsForValue().get(secretKey);
+        String storedSecret = (String) redisTemplate.opsForValue().get(secretKey);
+        String secret = encryptionService.decrypt(storedSecret);
         
         if (secret == null) {
             throw new BusinessException("TOTP 密钥已过期，请重新生成");
@@ -99,12 +109,12 @@ public class TotpService {
         boolean isValid = gAuth.authorize(secret, Integer.parseInt(code));
         
         if (!isValid) {
-            log.warn("TOTP 验证码验证失败: userId={}, code={}", userId, code);
+            log.warn("TOTP 验证码验证失败: userId={}", userId);
             return false;
         }
         
         // 3. 永久保存密钥
-        redisTemplate.opsForValue().set(secretKey, secret); // 无过期时间
+        redisTemplate.opsForValue().set(secretKey, encryptionService.encrypt(secret));
         
         log.info("TOTP 已启用: userId={}", userId);
         return true;
@@ -125,7 +135,8 @@ public class TotpService {
         
         // 2. 获取密钥
         String secretKey = TOTP_SECRET_PREFIX + userId;
-        String secret = (String) redisTemplate.opsForValue().get(secretKey);
+        String storedSecret = (String) redisTemplate.opsForValue().get(secretKey);
+        String secret = encryptionService.decrypt(storedSecret);
         
         if (secret == null) {
             log.error("TOTP 密钥丢失: userId={}", userId);
@@ -138,7 +149,7 @@ public class TotpService {
         if (isValid) {
             log.debug("TOTP 验证码验证成功: userId={}", userId);
         } else {
-            log.warn("TOTP 验证码验证失败: userId={}, code={}", userId, code);
+            log.warn("TOTP 验证码验证失败: userId={}", userId);
         }
         
         return isValid;
@@ -159,28 +170,54 @@ public class TotpService {
             return false;
         }
         
-        String[] codes = codesStr.split(",");
-        for (int i = 0; i < codes.length; i++) {
-            if (codes[i].equals(backupCode)) {
-                // 删除已使用的备份码
-                codes[i] = "";
-                String remainingCodes = String.join(",", codes).replaceAll("^,+|,+$", "").replaceAll(",,+", ",");
-                
-                if (remainingCodes.isEmpty()) {
-                    redisTemplate.delete(backupKey);
-                    log.warn("所有备份码已用完: userId={}", userId);
-                } else {
-                    redisTemplate.opsForValue().set(backupKey, remainingCodes, 
-                            BACKUP_CODE_EXPIRE_DAYS, TimeUnit.DAYS);
+        String[] codes = codesStr.split(",", -1);
+        String matchedValue = null;
+        boolean legacyPlaintext = false;
+        for (String code : codes) {
+            if (code == null || code.isEmpty()) {
+                continue;
+            }
+            if (code.startsWith("$2")) {
+                if (backupCodeEncoder.matches(backupCode, code)) {
+                    matchedValue = code;
+                    break;
                 }
-                
-                log.info("备份码验证成功: userId={}", userId);
-                return true;
+            } else if (code.equals(backupCode)) {
+                matchedValue = code;
+                legacyPlaintext = true;
+                break;
             }
         }
-        
-        log.warn("备份码无效: userId={}, code={}", userId, backupCode);
-        return false;
+        if (matchedValue == null) {
+            log.warn("备份码无效: userId={}", userId);
+            return false;
+        }
+
+        final String usedCode = matchedValue;
+        String remainingCodes;
+        if (legacyPlaintext) {
+            remainingCodes = java.util.Arrays.stream(codes)
+                    .filter(code -> !usedCode.equals(code))
+                    .filter(code -> !code.isEmpty())
+                    .map(backupCodeEncoder::encode)
+                    .collect(java.util.stream.Collectors.joining(","));
+        } else {
+            remainingCodes = java.util.Arrays.stream(codes)
+                    .filter(code -> !usedCode.equals(code))
+                    .filter(code -> !code.isEmpty())
+                    .collect(java.util.stream.Collectors.joining(","));
+        }
+
+        if (remainingCodes.isEmpty()) {
+            redisTemplate.delete(backupKey);
+            log.warn("所有备份码已用完: userId={}", userId);
+        } else {
+            redisTemplate.opsForValue().set(backupKey, remainingCodes,
+                    BACKUP_CODE_EXPIRE_DAYS, TimeUnit.DAYS);
+        }
+
+        log.info("备份码验证成功: userId={}", userId);
+        return true;
     }
     
     /**
@@ -216,7 +253,9 @@ public class TotpService {
             return 0;
         }
         
-        return codesStr.split(",").length;
+        return (int) java.util.Arrays.stream(codesStr.split(",", -1))
+                .filter(code -> code != null && !code.isEmpty())
+                .count();
     }
     
     /**
@@ -226,9 +265,15 @@ public class TotpService {
         String[] codes = new String[BACKUP_CODE_COUNT];
         for (int i = 0; i < BACKUP_CODE_COUNT; i++) {
             // 生成 8 位随机数字
-            codes[i] = String.format("%08d", (int) (Math.random() * 100000000));
+            codes[i] = String.format("%08d", secureRandom.nextInt(100_000_000));
         }
         return codes;
+    }
+
+    private String hashBackupCodes(String[] codes) {
+        return java.util.Arrays.stream(codes)
+                .map(backupCodeEncoder::encode)
+                .collect(java.util.stream.Collectors.joining(","));
     }
     
     /**

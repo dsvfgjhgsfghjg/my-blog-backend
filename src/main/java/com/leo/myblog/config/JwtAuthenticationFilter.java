@@ -1,6 +1,10 @@
 package com.leo.myblog.config;
 
 import com.leo.myblog.service.TokenBlacklistService;
+import com.leo.myblog.service.UserCacheService;
+import com.leo.myblog.service.SecurityMetricsService;
+import com.leo.myblog.entity.User;
+import com.leo.myblog.security.SecurityResponseWriter;
 import com.leo.myblog.util.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -28,6 +32,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final TokenBlacklistService tokenBlacklistService;
     private final CookieSecurityConfig cookieSecurityConfig;
+    private final UserCacheService userCacheService;
+    private final SecurityMetricsService securityMetricsService;
 
     /**
      * 公开路径统一由 {@link PublicPaths} 定义（含按 HTTP 方法区分，
@@ -41,63 +47,68 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (PublicPaths.isPublic(request)) {
-            log.debug("公开路径，跳过JWT过滤器: {}", request.getRequestURI());
-            return true;
-        }
-        return false;
+        return "OPTIONS".equalsIgnoreCase(request.getMethod());
     }
     
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
                                     HttpServletResponse response, 
                                     FilterChain filterChain) throws ServletException, IOException {
-        try {
-            // 从请求头获取Token
-            String token = getTokenFromRequest(request);
-                
-            if (token != null && jwtUtil.validateToken(token)) {
-                // 从 Token中获取用户信息
-                Long userId = jwtUtil.getUserIdFromToken(token);
-                String username = jwtUtil.getUsernameFromToken(token);
-                    
-                // 检查Token是否在黑名单中
-                if (tokenBlacklistService.isBlacklisted(userId, token)) {
-                    log.warn("Token已被加入黑名单: userId={}, username={}", userId, username);
-                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write("{\"code\":403,\"message\":\"登录信息已经失效，请重新登录\",\"data\":null}");
-                    return;
-                }
-                    
-                // 创建认证对象
-                UsernamePasswordAuthenticationToken authentication = 
-                    new UsernamePasswordAuthenticationToken(userId, null, Collections.emptyList());
-                    
-                // 设置到Security上下文
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-                    
-                // 将用户ID存入request属性，方便后续使用
-                request.setAttribute("userId", userId);
-                request.setAttribute("username", username);
-            } else if (token != null) {
-                // Token存在但无效，返回403
-                log.warn("无效的Token: {}", token.substring(0, Math.min(20, token.length())));
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"code\":403,\"message\":\"登录信息已经失效，请重新登录\",\"data\":null}");
-                return;
-            }
-            // 如果token为null，继续执行（允许公开接口访问）
-        } catch (Exception e) {
-            log.error("JWT认证失败：{}", e.getMessage());
-            // 认证异常，返回401
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"code\":401,\"message\":\"认证失败\",\"data\":null}");
+        String token = getTokenFromRequest(request);
+        boolean publicPath = PublicPaths.isPublic(request);
+        if (token == null) {
+            filterChain.doFilter(request, response);
             return;
         }
-            
+
+        if (!jwtUtil.validateToken(token)) {
+            if (publicPath) {
+                filterChain.doFilter(request, response);
+            } else {
+                securityMetricsService.authenticationFailure("invalid_jwt");
+                SecurityResponseWriter.write(response, 401, "登录信息已经失效，请重新登录");
+            }
+            return;
+        }
+
+        Long userId = jwtUtil.getUserIdFromToken(token);
+        String username = jwtUtil.getUsernameFromToken(token);
+        try {
+            if (tokenBlacklistService.isBlacklisted(userId, token)) {
+                if (publicPath) {
+                    filterChain.doFilter(request, response);
+                } else {
+                    securityMetricsService.authenticationFailure("blacklisted");
+                    SecurityResponseWriter.write(response, 401, "登录信息已经失效，请重新登录");
+                }
+                return;
+            }
+        } catch (Exception e) {
+            log.error("Token 黑名单检查失败，安全策略拒绝请求: userId={}", userId, e);
+            securityMetricsService.authenticationFailure("redis_unavailable");
+            SecurityResponseWriter.write(response, 503, "认证服务暂时不可用，请稍后重试");
+            return;
+        }
+
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(userId, null, Collections.emptyList());
+        User user = userCacheService.getUserById(userId);
+        if (user == null || !Boolean.TRUE.equals(user.getEnabled())) {
+            if (publicPath) {
+                filterChain.doFilter(request, response);
+            } else {
+                securityMetricsService.authenticationFailure("user_disabled");
+                SecurityResponseWriter.write(response, 401, "登录信息已经失效，请重新登录");
+            }
+            return;
+        }
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        request.setAttribute("userId", userId);
+        if (username != null) {
+            request.setAttribute("username", username);
+        }
+        request.setAttribute("isAdmin", Boolean.TRUE.equals(user.getIsAdmin()));
+
         filterChain.doFilter(request, response);
     }
     

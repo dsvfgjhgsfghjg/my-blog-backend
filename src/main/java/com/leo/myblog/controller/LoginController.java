@@ -12,6 +12,7 @@ import com.leo.myblog.dto.response.OAuth2TokenResponse;
 import com.leo.myblog.entity.AppDevice;
 import com.leo.myblog.service.AppAuthService;
 import com.leo.myblog.service.LoginService;
+import com.leo.myblog.security.ClientIpResolver;
 import com.leo.myblog.websocket.AuthWebSocketHandler;
 import com.leo.myblog.websocket.WebSocketSessionManager;
 import jakarta.servlet.http.Cookie;
@@ -20,7 +21,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -52,9 +52,7 @@ public class LoginController {
     private final WebSocketSessionManager webSocketSessionManager;
     private final AppAuthService appAuthService;
     private final CookieSecurityConfig cookieSecurityConfig;
-
-    @Value("${jwt.cookie.expose-token-in-body:true}")
-    private boolean exposeTokenInBody;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * Step 1: 提交用户名和旋转验证码
@@ -84,8 +82,11 @@ public class LoginController {
             Cookie authCookie = cookieSecurityConfig.createSecureCookie(response.getAccessToken());
             httpResponse.addCookie(authCookie);
         }
-
-        applyExposeTokenPolicy(response);
+        if (response.getRefreshToken() != null) {
+            Cookie refreshCookie = cookieSecurityConfig.createRefreshCookie(response.getRefreshToken());
+            httpResponse.addCookie(refreshCookie);
+        }
+        hideBrowserTokens(response);
 
         return Result.success("登录成功", response);
     }
@@ -141,13 +142,17 @@ public class LoginController {
                                                  HttpServletResponse httpResponse) {
         LoginPollResponse response = loginService.pollLoginResult(
                 challengeId,
-                getClientIp(httpRequest),
+                clientIpResolver.resolve(httpRequest),
                 httpRequest.getHeader("User-Agent"));
 
         if ("approved".equals(response.getStatus()) && response.getAccessToken() != null) {
             Cookie authCookie = cookieSecurityConfig.createSecureCookie(response.getAccessToken());
             httpResponse.addCookie(authCookie);
-            applyExposeTokenPolicy(response);
+            if (response.getRefreshToken() != null) {
+                Cookie refreshCookie = cookieSecurityConfig.createRefreshCookie(response.getRefreshToken());
+                httpResponse.addCookie(refreshCookie);
+            }
+            hideBrowserTokens(response);
         }
 
         return Result.success(response);
@@ -155,25 +160,17 @@ public class LoginController {
 
     // ==================== 内部方法 ====================
 
-    /**
-     * 按配置决定是否在响应体中暴露 Token
-     * <p>
-     * 与 OAuth2Controller 共用同一个配置键，保证两条登录路径行为一致。
-     */
-    private void applyExposeTokenPolicy(OAuth2TokenResponse response) {
-        if (!exposeTokenInBody) {
-            response.setAccessToken(null);
-            response.setTokenType(null);
-            response.setRefreshToken(null);
-        }
+    /** Browser credentials are carried only by HttpOnly cookies. */
+    private void hideBrowserTokens(OAuth2TokenResponse response) {
+        response.setAccessToken(null);
+        response.setTokenType(null);
+        response.setRefreshToken(null);
     }
 
-    private void applyExposeTokenPolicy(LoginPollResponse response) {
-        if (!exposeTokenInBody) {
-            response.setAccessToken(null);
-            response.setTokenType(null);
-            response.setRefreshToken(null);
-        }
+    private void hideBrowserTokens(LoginPollResponse response) {
+        response.setAccessToken(null);
+        response.setTokenType(null);
+        response.setRefreshToken(null);
     }
 
     private String resolveDeviceName(Long userId, String deviceId) {
@@ -189,17 +186,4 @@ public class LoginController {
                 .orElse(deviceId);
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip != null ? ip : "unknown";
-    }
 }

@@ -94,7 +94,7 @@ echo -e "${GREEN}⏳ 首次启动将下载 Docker 镜像，请耐心等待...${N
 echo ""
 
 cd "$PROJECT_DIR"
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f deploy/docker-compose.prod.yml up -d --build
 
 echo ""
 echo -e "${GREEN}✅ 服务已启动${NC}"
@@ -127,10 +127,10 @@ echo -e "  后端 API: http://localhost:18080/api/"
 echo -e "  MinIO:    http://localhost:9001/"
 echo ""
 echo -e "管理命令:"
-echo -e "  查看日志:  docker compose -f docker-compose.prod.yml logs -f"
-echo -e "  停止服务:  docker compose -f docker-compose.prod.yml down"
-echo -e "  重启服务:  docker compose -f docker-compose.prod.yml restart"
-echo -e "  查看状态:  docker compose -f docker-compose.prod.yml ps"
+echo -e "  查看日志:  docker compose -f deploy/docker-compose.prod.yml logs -f"
+echo -e "  停止服务:  docker compose -f deploy/docker-compose.prod.yml down"
+echo -e "  重启服务:  docker compose -f deploy/docker-compose.prod.yml restart"
+echo -e "  查看状态:  docker compose -f deploy/docker-compose.prod.yml ps"
 echo ""
 echo -e "${YELLOW}注意:${NC}"
 echo -e "  - 如需使用 HTTPS，请自行配置 SSL 证书"

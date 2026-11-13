@@ -5,6 +5,7 @@ import com.leo.myblog.entity.UaBlacklist;
 import com.leo.myblog.mapper.UaBlacklistMapper;
 import com.leo.myblog.service.IpBanService;
 import com.leo.myblog.service.SecurityEventService;
+import com.leo.myblog.security.ClientIpResolver;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -39,6 +40,7 @@ public class UaSecurityFilter implements Filter {
     private final RedisTemplate<String, Object> redisTemplate;
     private final SecurityEventService securityEventService;
     private final IpBanService ipBanService;
+    private final ClientIpResolver clientIpResolver;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     // Redis键前缀
@@ -84,7 +86,7 @@ public class UaSecurityFilter implements Filter {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
         
-        String clientIp = getClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
         String userAgent = httpRequest.getHeader("User-Agent");
         String requestUrl = httpRequest.getRequestURI();
         String requestMethod = httpRequest.getMethod();
@@ -267,20 +269,4 @@ public class UaSecurityFilter implements Filter {
     }
     
 
-    /**
-     * 获取客户端IP
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
-    }
 }

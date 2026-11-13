@@ -10,9 +10,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
  * WebSocket 配置
  * 注册 App 认证 WebSocket 端点
  * <p>
- * 提供两个端点：
- * 1. /ws/app/auth - 带 SockJS 降级（用于浏览器端）
- * 2. /ws/app/auth/native - 原生 WebSocket（用于 App 端，无 SockJS 干扰）
+ * 只提供 App 使用的原生 WebSocket 端点。
  */
 @Configuration
 @EnableWebSocket
@@ -23,13 +21,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // 带 SockJS 降级的端点（用于浏览器端）
-        registry.addHandler(authWebSocketHandler, "/ws/app/auth")
-                .setAllowedOriginPatterns("*")
-                .withSockJS();
-
-        // 原生 WebSocket 端点（用于 App 端，无 SockJS 干扰）
+        // 原生 WebSocket 端点（用于 App 端）。原生客户端不发送 Origin，
+        // 真正的访问控制由 JWT + deviceId + deviceSecret 完成。
         registry.addHandler(authWebSocketHandler, "/ws/app/auth/native")
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns("https://leo-blog.top", "https://www.leo-blog.top");
     }
 }

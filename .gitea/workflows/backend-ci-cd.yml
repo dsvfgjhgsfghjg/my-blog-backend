@@ -1,8 +1,7 @@
-name: Build, Test and Push Backend
+name: Test Backend and Manual Release
 
 on:
-  push:
-    branches: [ main, master ]
+  workflow_dispatch:
   pull_request:
     branches: [ main, master ]
 
@@ -21,7 +20,7 @@ env:
   MIGRATIONS_IMAGE: 127.0.0.1:3000/leoxiao/backend-migrations
 
 jobs:
-  # 本 workflow 只负责「构建并推送镜像」，不碰生产环境。
+  # MR 只跑测试。镜像仅在从 master/main 手动触发 workflow_dispatch 时构建推送。
   # 部署由宿主侧的 cron（/home/ubuntu/myblog-deploy/deploy.sh）拉取镜像完成。
   # 因此这里不再需要 DB / JWT / MinIO 等任何生产凭据。
   build-test-push:
@@ -122,6 +121,29 @@ jobs:
         # 不再用 `|| echo` 吞掉失败：测试是质量门禁，失败就应该拦住流水线，
         # 而不是让坏代码照样构建、推送、上线。
         run: ./gradlew test
+
+      - name: Secret scan
+        run: |
+          test -f "$GITHUB_WORKSPACE/.gitleaks.toml"
+          # The self-hosted job runs inside a container while Docker talks to the
+          # host daemon. A bind mount of $GITHUB_WORKSPACE therefore points at a
+          # host path that does not contain the checkout. Copy the workspace into
+          # the scanner container instead.
+          CONTAINER_ID=$(docker create \
+            docker.io/zricethezav/gitleaks:latest git /repo \
+            --config /repo/.gitleaks.toml --redact --verbose)
+          docker cp "$GITHUB_WORKSPACE/." "$CONTAINER_ID:/repo"
+          set +e
+          docker start -a "$CONTAINER_ID"
+          SCAN_RC=$?
+          set -e
+          docker rm -f "$CONTAINER_ID" >/dev/null
+          exit "$SCAN_RC"
+
+      - name: Dependency vulnerability scan
+        run: |
+          apk add --no-cache curl jq
+          sh scripts/security/scan-dependencies.sh
 
       # ============================================
       # 构建并推送镜像（仅 master/main）

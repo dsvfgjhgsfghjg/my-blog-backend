@@ -36,7 +36,7 @@ bash scripts/install.sh
 
 ## ✨ 项目简介
 
-**MyBlog** 是基于 **Spring Boot 3.2.5 + Java 21** 构建的个人博客系统后端，采用前后端分离架构，提供完整的用户管理、文章发布、评论互动、多媒体存储、内容审核与多层次安全防护能力。系统已通过完整的渗透测试与安全加固，可作为个人博客 / 知识库 / 技术内容平台的开箱即用方案。
+**MyBlog** 是基于 **Spring Boot 3.5.16 + Java 21** 构建的个人博客系统后端，采用前后端分离架构，提供完整的用户管理、文章发布、评论互动、多媒体存储、内容审核与多层次安全防护能力。系统已通过完整的渗透测试与安全加固，可作为个人博客 / 知识库 / 技术内容平台的开箱即用方案。
 
 前端以独立容器部署（Apache 静态资源），后端提供完全 RESTful 风格的 API。
 
@@ -48,7 +48,7 @@ bash scripts/install.sh
 | 类别 | 技术 |
 | --- | --- |
 | 语言 / JDK | **Java 21**（Temurin LTS） |
-| Web 框架 | **Spring Boot 3.2.5** + Spring Security |
+| Web 框架 | **Spring Boot 3.5.16** + Spring Security |
 | 持久层 | **MyBatis-Plus 3.5.5** |
 | 关系数据库 | **PostgreSQL 18** |
 | 缓存 | **Redis 7+** |
@@ -256,7 +256,7 @@ cp .env.example .env
 
 #### 2. 启动本地开发环境
 ```bash
-docker compose -f docker-compose.local.yml up -d
+docker compose -f deploy/docker-compose.local.yml up -d
 ```
 启动后：
 - 前端：`http://localhost:8081`
@@ -266,15 +266,14 @@ docker compose -f docker-compose.local.yml up -d
 
 #### 3. 启动生产环境（含 Apache + 自动 HTTPS）
 ```bash
-docker compose -f docker-compose.prod.yml up -d
-# SSL 部署：docker compose -f docker-compose.ssl.yml up -d
+docker compose -f deploy/docker-compose.prod.yml up -d
 ```
 
 ### 方式二：从源码构建
 
 ```bash
 # 1. 启动依赖（数据库、Redis、MinIO）
-docker compose up -d postgres redis minio
+docker compose -f deploy/docker-compose.local.yml up -d postgres redis minio
 
 # 2. 编译运行
 ./gradlew bootRun

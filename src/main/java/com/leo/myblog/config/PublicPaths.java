@@ -111,13 +111,10 @@ public final class PublicPaths {
             // （access_token 过期时才需要刷新；Cookie 里的 token 失效时仍要能登出并清 Cookie）
             post("/api/auth2/token/refresh"),
             post("/api/auth2/token/revoke"),
-            any("/api/auth2/oauth/login"),
-            any("/api/auth2/oauth/callback"),
-
             // ==================== App 双因素认证（设备未绑定时调用） ====================
             any("/api/auth/app/bind"),
             any("/api/auth/app/device-secret"),
-            any("/ws/app/auth/**")
+            any("/ws/app/auth/native")
     );
 
     private PublicPaths() {

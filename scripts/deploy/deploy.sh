@@ -36,7 +36,7 @@ check_docker() {
 # 停止并清理旧容器
 cleanup() {
     echo -e "${YELLOW}停止并清理旧容器...${NC}"
-    docker-compose -f docker-compose.prod.yml down || true
+    docker compose -f deploy/docker-compose.prod.yml down || true
     echo -e "${GREEN}✓ 清理完成${NC}"
     echo ""
 }
@@ -44,7 +44,7 @@ cleanup() {
 # 构建镜像
 build() {
     echo -e "${YELLOW}开始构建 Docker 镜像...${NC}"
-    docker-compose -f docker-compose.prod.yml build --no-cache
+    docker compose -f deploy/docker-compose.prod.yml build --no-cache
     echo -e "${GREEN}✓ 镜像构建完成${NC}"
     echo ""
 }
@@ -52,7 +52,7 @@ build() {
 # 启动服务
 start() {
     echo -e "${YELLOW}启动所有服务...${NC}"
-    docker-compose -f docker-compose.prod.yml up -d
+    docker compose -f deploy/docker-compose.prod.yml up -d
     echo -e "${GREEN}✓ 服务启动完成${NC}"
     echo ""
 }
@@ -61,11 +61,11 @@ start() {
 check_status() {
     echo -e "${YELLOW}检查服务状态...${NC}"
     sleep 10  # 等待服务启动
-    docker-compose -f docker-compose.prod.yml ps
+    docker compose -f deploy/docker-compose.prod.yml ps
     echo ""
     
     echo -e "${YELLOW}查看后端日志（最近50行）:${NC}"
-    docker-compose -f docker-compose.prod.yml logs --tail=50 backend
+    docker compose -f deploy/docker-compose.prod.yml logs --tail=50 backend
     echo ""
 }
 
@@ -86,10 +86,10 @@ show_info() {
     echo "  - Redis:        端口 6379"
     echo ""
     echo "常用命令："
-    echo "  - 查看日志:     docker-compose -f docker-compose.prod.yml logs -f"
-    echo "  - 停止服务:     docker-compose -f docker-compose.prod.yml down"
-    echo "  - 重启服务:     docker-compose -f docker-compose.prod.yml restart"
-    echo "  - 查看状态:     docker-compose -f docker-compose.prod.yml ps"
+    echo "  - 查看日志:     docker compose -f deploy/docker-compose.prod.yml logs -f"
+    echo "  - 停止服务:     docker compose -f deploy/docker-compose.prod.yml down"
+    echo "  - 重启服务:     docker compose -f deploy/docker-compose.prod.yml restart"
+    echo "  - 查看状态:     docker compose -f deploy/docker-compose.prod.yml ps"
     echo ""
 }
 

@@ -139,8 +139,8 @@ public class AppPushTestController {
                     result.put("status", "pushed");
                     pushResults.add(result);
 
-                    log.info("调试模式：返回正确答案 correctNumber={} (challengeId={})",
-                            challengeInfo.getCorrectNumber(), challengeInfo.getChallengeId());
+                    log.info("调试模式：返回挑战答案 (challengeId={})",
+                            challengeInfo.getChallengeId());
                 } else {
                     // 正常模式：返回完整挑战信息
                     Map<String, Object> result = new LinkedHashMap<>();

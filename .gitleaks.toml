@@ -1,0 +1,28 @@
+title = "MyBlog secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Current documentation uses placeholder tokens and curl headers"
+paths = [
+  '''docs/.*\.md$''',
+  '''frontend/.*\.md$''',
+]
+
+[[allowlists]]
+description = "Historical root Markdown API examples from two frozen commits"
+condition = "AND"
+commits = [
+  "6601c0464dda3a6d17aad6e4cee9a8faf7d18e1e",
+  "6771ff8531864f15ccc75ec55ecd90984e96fc9e",
+]
+paths = [
+  '''^[^/]+\.md$''',
+]
+
+[[allowlists]]
+description = "Security regression tests use obvious local-only fixture values"
+paths = [
+  '''src/test/.*''',
+]

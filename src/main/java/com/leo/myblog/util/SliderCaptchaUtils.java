@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.Random;
+import java.security.SecureRandom;
 
 /**
  * 旋转验证码工具类
@@ -47,7 +48,7 @@ public class SliderCaptchaUtils {
      */
     public static final int MAX_ROTATION = 180;
 
-    private static final Random RANDOM = new Random();
+    private static final Random RANDOM = new SecureRandom();
 
     /**
      * 生成指定范围内的随机整数

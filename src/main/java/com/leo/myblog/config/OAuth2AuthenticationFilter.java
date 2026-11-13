@@ -2,6 +2,9 @@ package com.leo.myblog.config;
 
 import com.leo.myblog.service.OAuth2TokenService;
 import com.leo.myblog.service.TokenBlacklistService;
+import com.leo.myblog.service.UserCacheService;
+import com.leo.myblog.entity.User;
+import com.leo.myblog.security.SecurityResponseWriter;
 import com.leo.myblog.util.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -37,15 +40,18 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
     private final TokenBlacklistService tokenBlacklistService;
     private final OAuth2TokenService oAuth2TokenService;
     private final CookieSecurityConfig cookieSecurityConfig;
+    private final UserCacheService userCacheService;
 
     public OAuth2AuthenticationFilter(JwtUtil jwtUtil,
                                        TokenBlacklistService tokenBlacklistService,
                                        @Lazy OAuth2TokenService oAuth2TokenService,
-                                       CookieSecurityConfig cookieSecurityConfig) {
+                                       CookieSecurityConfig cookieSecurityConfig,
+                                       UserCacheService userCacheService) {
         this.jwtUtil = jwtUtil;
         this.tokenBlacklistService = tokenBlacklistService;
         this.oAuth2TokenService = oAuth2TokenService;
         this.cookieSecurityConfig = cookieSecurityConfig;
+        this.userCacheService = userCacheService;
     }
 
     /**
@@ -54,13 +60,6 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
      */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // 公开路径跳过（避免浏览器携带过期 Cookie 导致 403）
-        if (PublicPaths.isPublic(request)) {
-            log.debug("OAuth2 过滤器跳过公开路径: {}", request.getRequestURI());
-            return true;
-        }
-
-        // OPTIONS 请求跳过（保留原有行为）
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
@@ -92,14 +91,21 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
                     // 检查黑名单
                     if (tokenBlacklistService.isBlacklisted(userId, token)) {
                         log.warn("OAuth2 Token 已被加入黑名单: userId={}", userId);
-                        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                        response.setContentType("application/json;charset=UTF-8");
-                        response.getWriter().write("{\"code\":403,\"message\":\"登录信息已经失效，请重新登录\",\"data\":null}");
+                        if (PublicPaths.isPublic(request)) {
+                            filterChain.doFilter(request, response);
+                        } else {
+                            SecurityResponseWriter.write(response, 401, "登录信息已经失效，请重新登录");
+                        }
                         return;
                     }
 
-                    setAuthentication(userId, username, request);
-                    filterChain.doFilter(request, response);
+                    if (setAuthentication(userId, username, request)) {
+                        filterChain.doFilter(request, response);
+                    } else if (PublicPaths.isPublic(request)) {
+                        filterChain.doFilter(request, response);
+                    } else {
+                        SecurityResponseWriter.write(response, 401, "登录信息已经失效，请重新登录");
+                    }
                     return;
                 }
 
@@ -107,23 +113,29 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
                 Long userId = oAuth2TokenService.getUserIdFromToken(token);
                 if (userId != null) {
                     log.debug("OAuth2 Token 验证通过（通过授权记录）: userId={}", userId);
-                    setAuthentication(userId, null, request);
-                    filterChain.doFilter(request, response);
+                    if (setAuthentication(userId, null, request)) {
+                        filterChain.doFilter(request, response);
+                    } else if (PublicPaths.isPublic(request)) {
+                        filterChain.doFilter(request, response);
+                    } else {
+                        SecurityResponseWriter.write(response, 401, "登录信息已经失效，请重新登录");
+                    }
                     return;
                 }
 
-                // Token 无效
-                log.warn("OAuth2 Token 无效");
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"code\":403,\"message\":\"登录信息已经失效，请重新登录\",\"data\":null}");
-                return;
+                if (!PublicPaths.isPublic(request)) {
+                    log.warn("OAuth2 Token 无效");
+                    SecurityResponseWriter.write(response, 401, "登录信息已经失效，请重新登录");
+                    return;
+                }
             }
         } catch (Exception e) {
             log.error("OAuth2 认证失败: {}", e.getMessage());
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"code\":401,\"message\":\"认证失败\",\"data\":null}");
+            if (PublicPaths.isPublic(request)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            SecurityResponseWriter.write(response, 401, "认证失败");
             return;
         }
 
@@ -133,7 +145,11 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
     /**
      * 设置认证信息到 SecurityContext
      */
-    private void setAuthentication(Long userId, String username, HttpServletRequest request) {
+    private boolean setAuthentication(Long userId, String username, HttpServletRequest request) {
+        User user = userCacheService.getUserById(userId);
+        if (user == null || !Boolean.TRUE.equals(user.getEnabled())) {
+            return false;
+        }
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(userId, null, Collections.emptyList());
         SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -141,6 +157,8 @@ public class OAuth2AuthenticationFilter extends OncePerRequestFilter {
         if (username != null) {
             request.setAttribute("username", username);
         }
+        request.setAttribute("isAdmin", Boolean.TRUE.equals(user.getIsAdmin()));
+        return true;
     }
 
     /**

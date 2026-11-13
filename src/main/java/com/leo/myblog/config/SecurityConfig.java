@@ -19,6 +19,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.List;
 
+import com.leo.myblog.security.AllowedOrigins;
+import com.leo.myblog.security.CsrfOriginFilter;
+import com.leo.myblog.security.RestAccessDeniedHandler;
+import com.leo.myblog.security.RestAuthenticationEntryPoint;
+
 /**
  * Spring Security配置
  */
@@ -28,11 +33,23 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final OAuth2AuthenticationFilter oAuth2AuthenticationFilter;
+    private final CsrfOriginFilter csrfOriginFilter;
+    private final AllowedOrigins allowedOrigins;
+    private final RestAuthenticationEntryPoint authenticationEntryPoint;
+    private final RestAccessDeniedHandler accessDeniedHandler;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-                          @Lazy OAuth2AuthenticationFilter oAuth2AuthenticationFilter) {
+                          @Lazy OAuth2AuthenticationFilter oAuth2AuthenticationFilter,
+                          CsrfOriginFilter csrfOriginFilter,
+                          AllowedOrigins allowedOrigins,
+                          RestAuthenticationEntryPoint authenticationEntryPoint,
+                          RestAccessDeniedHandler accessDeniedHandler) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.oAuth2AuthenticationFilter = oAuth2AuthenticationFilter;
+        this.csrfOriginFilter = csrfOriginFilter;
+        this.allowedOrigins = allowedOrigins;
+        this.authenticationEntryPoint = authenticationEntryPoint;
+        this.accessDeniedHandler = accessDeniedHandler;
     }
 
     /**
@@ -70,6 +87,9 @@ public class SecurityConfig {
             // 设置会话管理为无状态
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(authenticationEntryPoint)
+                .accessDeniedHandler(accessDeniedHandler))
 
             // 安全修复V8/V9: 添加安全响应头
             .headers(headers -> headers
@@ -173,13 +193,10 @@ public class SecurityConfig {
                 // （access_token 过期时才需要刷新；Cookie 里的 token 失效时仍要能登出并清 Cookie）
                 .requestMatchers("/api/auth2/token/refresh").permitAll()   // 刷新 Token
                 .requestMatchers("/api/auth2/token/revoke").permitAll()    // 撤销 Token（登出）
-                .requestMatchers("/api/auth2/oauth/login").permitAll()     // 第三方登录入口
-                .requestMatchers("/api/auth2/oauth/callback").permitAll()  // 第三方登录回调
-
                 // App 双因素认证公开接口
                 .requestMatchers("/api/auth/app/bind").permitAll()        // App 密码绑定（公开）
                 .requestMatchers("/api/auth/app/device-secret").permitAll() // 设备码生成（公开，设备未绑定时调用）
-                .requestMatchers("/ws/app/auth/**").permitAll()          // App WebSocket（公开，内部认证）
+                .requestMatchers("/ws/app/auth/native").permitAll()      // App WebSocket（公开，内部认证）
 
                 
                 // App 双因素认证需要登录的接口
@@ -198,8 +215,10 @@ public class SecurityConfig {
             // 添加JWT过滤器
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
 
-            // 添加OAuth2过滤器（在JWT过滤器之后执行）
-            .addFilterAfter(oAuth2AuthenticationFilter, JwtAuthenticationFilter.class);
+            // OAuth2 opaque token fallback runs after the standard username/password slot.
+            .addFilterAfter(oAuth2AuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            // Origin validation only needs request headers and cookies.
+            .addFilterBefore(csrfOriginFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -214,11 +233,7 @@ public class SecurityConfig {
 
         // 允许的源（生产环境应该替换为实际域名）
         // 注意：当 allowCredentials=true 时，不能使用 "*"，必须明确指定源
-        configuration.setAllowedOriginPatterns(List.of(
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-            "https://*"  // 生产环境根据实际情况调整
-        ));
+        configuration.setAllowedOrigins(allowedOrigins.getOrigins());
 
         // 允许的HTTP方法
         configuration.setAllowedMethods(Arrays.asList(

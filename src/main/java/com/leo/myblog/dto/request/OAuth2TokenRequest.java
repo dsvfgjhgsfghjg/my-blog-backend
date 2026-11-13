@@ -6,7 +6,7 @@ import lombok.Data;
 
 /**
  * OAuth2 Token 颁发请求
- * 支持多种 grant_type: password, authorization_code, client_credentials, refresh_token
+ * 支持多种 grant_type: password, authorization_code, refresh_token
  *
  * 字段使用 @JsonProperty 映射 snake_case 和 camelCase，
  * 前端请求体中的 grant_type 将正确映射到 grantType 字段
@@ -34,7 +34,7 @@ public class OAuth2TokenRequest {
     @JsonProperty("redirect_uri")
     private String redirectUri;
 
-    // ============ client_credentials grant ============
+    // ============ client credentials ============
     /** 客户端ID */
     @JsonProperty("client_id")
     private String clientId;

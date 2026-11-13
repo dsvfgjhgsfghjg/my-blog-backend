@@ -14,6 +14,7 @@ import com.leo.myblog.enums.LoginMethod;
 import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.mapper.UserMapper;
 import com.leo.myblog.websocket.WebSocketSessionManager;
+import com.leo.myblog.security.ClientIpResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -61,6 +62,7 @@ public class LoginService {
     private final PasswordEncoder passwordEncoder;
     private final WebSocketSessionManager webSocketSessionManager;
     private final OAuth2TokenService oAuth2TokenService;
+    private final ClientIpResolver clientIpResolver;
 
     // Redis 键前缀
     private static final String LAST_LOGIN_METHOD_PREFIX = "user:login:last_method:";
@@ -350,9 +352,8 @@ public class LoginService {
 
         LoginChallenge challenge = generateLoginChallenge(user.getId());
 
-        log.info("生成登录挑战: userId={}, challengeId={}, numbers={}, correctNumber={}",
-                user.getId(), challenge.getChallengeId(),
-                Arrays.toString(challenge.getNumbers()), challenge.getCorrectNumber());
+        log.info("生成登录挑战: userId={}, challengeId={}, expiresAt={}",
+                user.getId(), challenge.getChallengeId(), challenge.getExpiresAt());
 
         return challenge;
     }
@@ -724,26 +725,7 @@ public class LoginService {
     }
 
     private String getClientIpAddress() {
-        try {
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (attributes != null) {
-                jakarta.servlet.http.HttpServletRequest request = attributes.getRequest();
-                String ip = request.getHeader("X-Forwarded-For");
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("X-Real-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getRemoteAddr();
-                }
-                if (ip != null && ip.contains(",")) {
-                    ip = ip.split(",")[0].trim();
-                }
-                return ip;
-            }
-        } catch (Exception e) {
-            log.warn("获取客户端IP失败", e);
-        }
-        return "unknown";
+        return clientIpResolver.resolveCurrentRequest();
     }
 
     private String getClientUserAgent() {

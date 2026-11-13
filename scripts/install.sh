@@ -338,7 +338,7 @@ EOF
     echo "===== Docker Compose Build & Up ====="
     echo "===== Docker Compose Build & Up =====" >> "$LOG_FILE"
     set +e
-    docker compose -f docker-compose.prod.yml up -d --build 2>&1 | tee -a "$LOG_FILE"
+    docker compose -f deploy/docker-compose.prod.yml up -d --build 2>&1 | tee -a "$LOG_FILE"
     local compose_exit=${PIPESTATUS[0]}
     set -e
     echo "docker compose exit code: ${compose_exit}" >> "$LOG_FILE"
@@ -395,7 +395,7 @@ EOF
         echo "===== 后端容器日志 ====="
         docker logs myblog-backend --tail 50 2>&1 | tee -a "$LOG_FILE"
         echo "===== 尝试查看数据库连接状态 ====="
-        docker compose -f docker-compose.prod.yml exec -T postgres psql -U myblog -d myblog -c "SELECT 1 as connected;" 2>&1 | tee -a "$LOG_FILE" || echo "数据库无法连接"
+        docker compose -f deploy/docker-compose.prod.yml exec -T postgres psql -U myblog -d myblog -c "SELECT 1 as connected;" 2>&1 | tee -a "$LOG_FILE" || echo "数据库无法连接"
         exit 1
     fi
     
@@ -490,13 +490,13 @@ SQL
     
     set +e
     echo "  执行 SQL（使用 docker compose exec 确保连接到正确网络）..."
-    cat /tmp/myblog_init.sql | docker compose -f docker-compose.prod.yml exec -T postgres psql -U myblog -d myblog -v ON_ERROR_STOP=1 2>&1 | tee -a "$LOG_FILE"
+    cat /tmp/myblog_init.sql | docker compose -f deploy/docker-compose.prod.yml exec -T postgres psql -U myblog -d myblog -v ON_ERROR_STOP=1 2>&1 | tee -a "$LOG_FILE"
     local sql_exit=${PIPESTATUS[0]}
     echo "  psql 退出码: ${sql_exit}" >> "$LOG_FILE"
     
     # 验证用户是否创建成功
     echo "  验证用户创建..."
-    docker compose -f docker-compose.prod.yml exec -T postgres psql -U myblog -d myblog -c "SELECT id, username, nickname, is_admin FROM t_user;" 2>&1 | tee -a "$LOG_FILE"
+    docker compose -f deploy/docker-compose.prod.yml exec -T postgres psql -U myblog -d myblog -c "SELECT id, username, nickname, is_admin FROM t_user;" 2>&1 | tee -a "$LOG_FILE"
     local verify_exit=$?
     
     rm -f /tmp/myblog_init.sql
@@ -564,8 +564,8 @@ show_complete() {
     echo -e "  ${YELLOW}这些信息已保存在安装日志中: ${LOG_FILE}${NC}"
     echo ""
     echo -e "  管理命令:"
-    echo -e "    日志:   docker compose -f docker-compose.prod.yml logs -f"
-    echo -e "    停止:   docker compose -f docker-compose.prod.yml down"
+    echo -e "    日志:   docker compose -f deploy/docker-compose.prod.yml logs -f"
+    echo -e "    停止:   docker compose -f deploy/docker-compose.prod.yml down"
     echo -e "    卸载:   bash scripts/uninstall.sh"
     echo ""
     echo -e "  ${YELLOW}安装日志: ${LOG_FILE}${NC}"

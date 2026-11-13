@@ -4,6 +4,7 @@ import com.leo.myblog.common.Result;
 import com.leo.myblog.entity.SliderCaptcha;
 import com.leo.myblog.service.CaptchaRateLimitService;
 import com.leo.myblog.service.SliderCaptchaService;
+import com.leo.myblog.security.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ public class SliderCaptchaController {
     
     private final SliderCaptchaService captchaService;
     private final CaptchaRateLimitService rateLimitService;
+    private final ClientIpResolver clientIpResolver;
     
     /**
      * 获取二维滑块验证码
@@ -34,7 +36,7 @@ public class SliderCaptchaController {
      */
     @GetMapping("/slider")
     public Result<SliderCaptcha> getSliderCaptcha(HttpServletRequest request) {
-        String clientIp = getClientIp(request);
+        String clientIp = clientIpResolver.resolve(request);
         
         // 1. 检查速率限制
         if (!rateLimitService.isRequestAllowed(clientIp)) {
@@ -59,27 +61,4 @@ public class SliderCaptchaController {
         }
     }
     
-    /**
-     * 获取客户端真实 IP
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // 多个代理时，第一个 IP 是真实 IP
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
-    }
 }

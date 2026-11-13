@@ -4,6 +4,12 @@
 
 ## 目录结构
 
+### [engineering/](./engineering/) - 工程接手与协作规范
+- 仓库边界、职责分工与安全不变量
+- 开发、测试、发布和跨端交接流程
+- 2026-11-12 安全审计基线
+- 2026-11-13 安全维护窗口与回滚手册
+
 ### [api/](./api/) - API 文档
 包含所有 API 接口的详细说明文档：
 - 用户认证与授权 API
@@ -48,6 +54,9 @@
 - `疑惑.md` - 项目开发过程中的疑问和思考
 - `.gitignore.docker` - Docker 相关的 git 忽略规则
 - `.sdkmanrc` - SDKMAN 配置文件
+
+App 端需要的变更说明统一放在 [app-handoffs/](./app-handoffs/)，模板见
+[engineering/APP_HANDOFF_TEMPLATE.md](./engineering/APP_HANDOFF_TEMPLATE.md)。
 
 ## 脚本文件
 

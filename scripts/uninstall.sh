@@ -27,9 +27,9 @@ if ! command -v docker &>/dev/null; then
 fi
 
 # 检查 compose 文件
-COMPOSE_FILE="${PROJECT_DIR}/docker-compose.prod.yml"
+COMPOSE_FILE="${PROJECT_DIR}/deploy/docker-compose.prod.yml"
 if [ ! -f "$COMPOSE_FILE" ]; then
-    echo -e "${YELLOW}⚠️  找不到 docker-compose.prod.yml${NC}"
+    echo -e "${YELLOW}⚠️  找不到 deploy/docker-compose.prod.yml${NC}"
     echo "   将尝试通过容器名直接删除容器"
     COMPOSE_FILE=""
 fi
@@ -183,7 +183,7 @@ if [ "$UNINSTALL_MODE" = "soft" ]; then
     echo "  bash scripts/deploy.sh"
     echo ""
     echo "或手动启动："
-    echo "  docker compose -f docker-compose.prod.yml up -d --build"
+    echo "  docker compose -f deploy/docker-compose.prod.yml up -d --build"
 else
     echo "如需重新部署，请重新解压发行包或执行："
     echo "  cd ${PROJECT_DIR}"

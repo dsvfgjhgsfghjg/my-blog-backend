@@ -11,6 +11,7 @@ import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.service.AuditLogService;
 import com.leo.myblog.util.AndroidUaDetector;
 import com.leo.myblog.util.UserAgentParser;
+import com.leo.myblog.security.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -58,18 +59,21 @@ public class AuditLogAspect {
     /** 与切面共用同一个 ObjectMapper 配置（含 snake_case 命名策略），否则字段名对不上掩码表 */
     private final ObjectMapper objectMapper;
     private final AuditParamSanitizer paramSanitizer;
+    private final ClientIpResolver clientIpResolver;
 
     private static final int MAX_RESPONSE_MESSAGE_LEN = 500;
 
     public AuditLogAspect(AuditLogService auditLogService,
                           AndroidUaDetector androidUaDetector,
                           UserAgentParser userAgentParser,
-                          ObjectMapper objectMapper) {
+                          ObjectMapper objectMapper,
+                          ClientIpResolver clientIpResolver) {
         this.auditLogService = auditLogService;
         this.androidUaDetector = androidUaDetector;
         this.userAgentParser = userAgentParser;
         this.objectMapper = objectMapper;
         this.paramSanitizer = new AuditParamSanitizer(objectMapper);
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Around("@annotation(com.leo.myblog.annotation.RequireAdmin) || " +
@@ -116,7 +120,7 @@ public class AuditLogAspect {
         auditLog.setDescription(metadata.description());
 
         if (request != null) {
-            auditLog.setIpAddress(getClientIp(request));
+            auditLog.setIpAddress(clientIpResolver.resolve(request));
             auditLog.setUserAgent(request.getHeader("User-Agent"));
             auditLog.setRequestUrl(request.getRequestURI());
             auditLog.setRequestMethod(request.getMethod());
@@ -290,27 +294,4 @@ public class AuditLogAspect {
         return "anonymous";
     }
 
-    /**
-     * 获取客户端IP地址
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // 多个代理时，第一个IP为真实IP
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
-    }
 }

@@ -7,6 +7,7 @@ import com.leo.myblog.service.LoginService;
 import com.leo.myblog.service.TotpService;
 import com.leo.myblog.service.TotpSessionService;
 import com.leo.myblog.service.SystemConfigService;
+import com.leo.myblog.service.MfaAttemptService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -45,6 +46,7 @@ public class VerificationAspect {
     private final SystemConfigService systemConfigService;
     private final AppAuthService appAuthService;
     private final LoginService loginService;
+    private final MfaAttemptService mfaAttemptService;
 
     @Around("@annotation(com.leo.myblog.annotation.RequireTotp)")
     public Object checkVerification(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -100,6 +102,8 @@ public class VerificationAspect {
             return joinPoint.proceed();
         }
 
+        mfaAttemptService.assertAllowed(userId);
+
         // 检查验证方法：优先 X-Verify-Method 请求头，否则尝试 TOTP（向后兼容）
         String verifyMethod = request.getHeader("X-Verify-Method");
 
@@ -136,9 +140,11 @@ public class VerificationAspect {
         }
 
         if (!isValid) {
+            mfaAttemptService.recordFailure(userId);
             log.warn("TOTP 验证码错误: userId={}, codeLength={}", userId, code.length());
             throw new BusinessException(401, "验证码错误或已过期");
         }
+        mfaAttemptService.recordSuccess(userId);
 
         // 验证成功，创建会话
         totpSessionService.createSession(userId);
@@ -208,6 +214,7 @@ public class VerificationAspect {
                     userId, challengeId);
             throw new BusinessException(401, "验证挑战已失效，请重新发送");
         }
+        mfaAttemptService.recordSuccess(userId);
 
         // 验证成功，创建会话
         totpSessionService.createSession(userId);

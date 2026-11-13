@@ -1,6 +1,7 @@
 package com.leo.myblog.service;
 
 import com.leo.myblog.util.JwtUtil;
+import com.leo.myblog.security.TokenHashUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -43,11 +44,14 @@ public class TokenSessionService {
     public void recordSession(Long userId, String token, String ipAddress, 
                               String userAgent, String deviceInfo) {
         try {
-            // 1. 提取Token标识（使用hashCode避免存储完整Token）
-            String tokenHash = String.valueOf(token.hashCode());
+            // 1. 提取不可逆 Token 标识，避免存储完整 Token
+            String tokenHash = TokenHashUtils.sha256(token);
             
-            // 2. 计算过期时间（使用固定的24小时）
-            long expirationSeconds = SESSION_TIMEOUT_SECONDS;
+            // 2. 与实际 JWT 剩余有效期保持一致
+            long expirationSeconds = jwtUtil.getRemainingExpiration(token);
+            if (expirationSeconds <= 0) {
+                expirationSeconds = SESSION_TIMEOUT_SECONDS;
+            }
             
             // 3. 存储Token到用户的会话列表
             String userSessionsKey = USER_SESSIONS_PREFIX + userId;
@@ -60,7 +64,7 @@ public class TokenSessionService {
             sessionData.put("expireTime", LocalDateTime.now().plusSeconds(expirationSeconds).toString());
             
             redisTemplate.opsForHash().put(userSessionsKey, tokenHash, sessionData);
-            redisTemplate.expire(userSessionsKey, SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            redisTemplate.expire(userSessionsKey, expirationSeconds, TimeUnit.SECONDS);
             
             // 4. 存储反向索引：Token Hash -> UserId（用于快速查找）
             String tokenSessionKey = TOKEN_SESSION_PREFIX + tokenHash;

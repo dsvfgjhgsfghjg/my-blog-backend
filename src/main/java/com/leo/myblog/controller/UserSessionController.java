@@ -5,6 +5,8 @@ import com.leo.myblog.config.CookieSecurityConfig;
 import com.leo.myblog.dto.response.UserSessionResponse;
 import com.leo.myblog.service.TokenSessionService;
 import com.leo.myblog.service.TotpService;
+import com.leo.myblog.service.MfaAttemptService;
+import com.leo.myblog.security.TokenHashUtils;
 import com.leo.myblog.util.UserAgentParser;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class UserSessionController {
     private final TotpService totpService;
     private final UserAgentParser userAgentParser;
     private final CookieSecurityConfig cookieSecurityConfig;
+    private final MfaAttemptService mfaAttemptService;
     
     /**
      * 获取当前用户的所有活跃会话
@@ -43,7 +46,7 @@ public class UserSessionController {
         if (currentToken == null) {
             currentToken = extractTokenFromCookie();
         }
-        String currentTokenHash = currentToken != null ? String.valueOf(currentToken.hashCode()) : "";
+        String currentTokenHash = currentToken != null ? TokenHashUtils.sha256(currentToken) : "";
         
         // 获取所有会话
         List<Map<String, Object>> sessions = tokenSessionService.getUserSessions(userId);
@@ -71,6 +74,7 @@ public class UserSessionController {
             return Result.error(400, "请输入TOTP验证码");
         }
         
+        mfaAttemptService.assertAllowed(userId);
         boolean isValid = totpService.verifyTotpCode(userId, request.getTotpCode().trim());
         
         // 尝试作为备份码验证
@@ -79,9 +83,11 @@ public class UserSessionController {
         }
         
         if (!isValid) {
+            mfaAttemptService.recordFailure(userId);
             log.warn("TOTP验证码错误: userId={}", userId);
             return Result.error(400, "TOTP验证码错误或已过期");
         }
+        mfaAttemptService.recordSuccess(userId);
         
         // 2. 获取被下线会话的设备信息（用于审计日志）
         Map<String, Object> sessionData = tokenSessionService.getSessionData(userId, sessionId);
@@ -121,6 +127,7 @@ public class UserSessionController {
             return Result.error(400, "请输入TOTP验证码");
         }
         
+        mfaAttemptService.assertAllowed(userId);
         boolean isValid = totpService.verifyTotpCode(userId, request.getTotpCode().trim());
         
         // 尝试作为备份码验证
@@ -129,16 +136,18 @@ public class UserSessionController {
         }
         
         if (!isValid) {
+            mfaAttemptService.recordFailure(userId);
             log.warn("TOTP验证码错误: userId={}", userId);
             return Result.error(400, "TOTP验证码错误或已过期");
         }
+        mfaAttemptService.recordSuccess(userId);
         
         // 2. 获取当前Token Hash（优先从Authorization header，兜底从Cookie）
         String currentToken = extractToken(authorization);
         if (currentToken == null) {
             currentToken = extractTokenFromCookie();
         }
-        String currentTokenHash = currentToken != null ? String.valueOf(currentToken.hashCode()) : "";
+        String currentTokenHash = currentToken != null ? TokenHashUtils.sha256(currentToken) : "";
         
         // 3. 下线所有其他会话
         int count = tokenSessionService.revokeOtherSessions(userId, currentTokenHash);
