@@ -99,6 +99,7 @@ Run `npm run build` and `npm run test:e2e` for frontend changes.
 - App handoff template: `docs/engineering/APP_HANDOFF_TEMPLATE.md`
 - Security audit: `docs/engineering/SECURITY_AUDIT_20261112.md`
 - Security release runbook: `docs/engineering/SECURITY_RELEASE_RUNBOOK_20261113.md`
+- Deployment follow-ups: `docs/engineering/DEPLOYMENT_FOLLOWUPS.md`
 
 ## 6. Local Search and Vector Store Decision
 

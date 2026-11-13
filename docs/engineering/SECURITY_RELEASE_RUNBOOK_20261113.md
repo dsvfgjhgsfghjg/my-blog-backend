@@ -49,6 +49,12 @@ Rotate and revoke credentials before the sanitized history is deployed:
 
 After rotating JWT keys, revoke all active sessions and refresh tokens.
 
+For Gitea API maintenance, do not enter the account password in this repository
+or an automation prompt. Create a short-lived access token in the Gitea UI and
+store it locally with `scripts/security/store-gitea-token.sh`. The API wrapper
+rejects plain HTTP except on loopback interfaces. Remove the token after the
+maintenance window with `scripts/security/remove-gitea-token.sh`.
+
 ## 3. Rewrite Backend History
 
 Install `git-filter-repo` from the operating-system package or a pinned release.
