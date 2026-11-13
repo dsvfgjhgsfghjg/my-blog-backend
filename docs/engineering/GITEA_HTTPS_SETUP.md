@@ -15,6 +15,35 @@ the private `gitea-network`. No new DNS record or certificate is required.
 Keep the direct Gitea HTTP port private after the HTTPS path is verified. Port 222
 remains the Git SSH endpoint.
 
+## Activation Status: 2026-11-13
+
+Active in production:
+
+- `https://leo-blog.top/gitea/` and the API return Gitea content over the existing
+  valid TLS certificate.
+- Gitea HTML uses `/gitea/` for `appUrl`, assets, links, and cookie paths.
+- Gitea cookies are `HttpOnly`, `Secure`, and scoped to `/gitea/`.
+- `gitea-server-1.27` binds HTTP 3000 only to `127.0.0.1`.
+- Public Git SSH remains on port 222 and the `leo-blog.top` hostname works.
+- The Gitea runner is online and uses the HTTPS instance URL.
+- The MyBlog frontend image was not changed; it still runs the previously
+  verified image digest.
+
+The production frontend uses an operational bind mount for
+`/home/ubuntu/myblog-deploy/frontend-apache.conf` so the HTTPS route could be
+enabled without deploying the pending security business changes. Keep that file
+and mount until a frontend image containing the same Apache configuration has
+been released and verified.
+
+Gitea HTTPS environment overrides are stored outside Git at:
+
+```text
+/home/ubuntu/gitea-data/gitea.env.https
+```
+
+The file must remain mode `0600`. Previous Gitea and runner containers remain
+stopped as immediate rollback points until the maintenance window closes.
+
 ## Required Settings
 
 Frontend repository:
