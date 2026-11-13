@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-Usage: scripts/security/gitea-api.sh <GET|POST> <path>
+Usage: scripts/security/gitea-api.sh <GET|POST|DELETE> <path>
 
 Authentication uses the system keyring token when available, otherwise the
 Gitea username/password loaded from the private environment file. Secrets are
@@ -20,7 +20,7 @@ fi
 method=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')
 path=$2
 case "$method" in
-  GET|POST) ;;
+  GET|POST|DELETE) ;;
   *)
     usage
     exit 2

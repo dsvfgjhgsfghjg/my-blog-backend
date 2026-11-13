@@ -44,6 +44,25 @@ Gitea HTTPS environment overrides are stored outside Git at:
 The file must remain mode `0600`. Previous Gitea and runner containers remain
 stopped as immediate rollback points until the maintenance window closes.
 
+## Storage Maintenance: 2026-11-13
+
+Completed with the admin API:
+
+- Ran `git_gc_repos`, `archive_cleanup`, `deleted_branches_cleanup`, and
+  `cleanup_packages`.
+- Removed 50 obsolete container-image versions from September.
+- Kept `latest`, the current backend/migration SHA, and the current plus previous
+  frontend SHA:
+  - `backend`: `latest`, `649829d`
+  - `backend-migrations`: `latest`, `649829d`
+  - `frontend`: `latest`, `1219eeb`, `33a14b0`
+- Gitea data usage decreased from approximately `1.8G` to `453M`.
+- No Actions artifacts were present.
+
+The Gitea API wrapper supports `GET`, `POST`, and `DELETE`. Git HTTPS operations
+use `scripts/security/gitea-git.sh`, which reads the private environment file
+without prompting for a password.
+
 ## Required Settings
 
 Frontend repository:

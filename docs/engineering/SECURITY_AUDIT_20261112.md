@@ -409,8 +409,9 @@ These items cannot be completed by source changes alone:
    images before the maintenance window.
 2. Retry the sanitized GitHub pushes when GitHub Git transport is reachable, then
    confirm the public refs no longer resolve to old commits.
-3. Run Gitea server-side Git garbage collection and expire CI caches, artifacts,
-   and source archives that may retain old objects.
+3. Gitea server-side Git GC, archive cleanup, deleted-branch cleanup, old package
+   removal, and package cleanup are complete. Continue to expire any external CI
+   caches or source archives that are outside the Gitea data directory.
 4. Revoke the exposed SSH, Git Runner, JWT, database, Redis, MinIO, and administrator
    credentials before deploying replacement values.
 5. Complete the disclosure assessment for the exposed dump using the aggregate
