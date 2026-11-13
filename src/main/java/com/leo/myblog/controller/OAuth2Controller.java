@@ -7,6 +7,7 @@ import com.leo.myblog.dto.response.AbilityResponse;
 import com.leo.myblog.dto.response.OAuth2TokenResponse;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.exception.TokenAuthenticationException;
 import com.leo.myblog.service.*;
 import com.leo.myblog.security.ClientIpResolver;
 import com.leo.myblog.service.SecurityMetricsService;
@@ -101,7 +102,7 @@ public class OAuth2Controller {
             request.setRefreshToken(extractCookie(httpRequest, cookieSecurityConfig.getRefreshCookieName()));
         }
         if (request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
-            throw new BusinessException(401, "refresh_token 缺失或已过期");
+            throw new TokenAuthenticationException("refresh_token 缺失或已过期");
         }
         request.setGrantType("refresh_token");
         OAuth2TokenResponse response = oAuth2TokenService.issueToken(request, null, null);

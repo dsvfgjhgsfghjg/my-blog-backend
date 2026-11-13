@@ -79,6 +79,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Result.error(e.getCode(), e.getMessage()));
     }
 
+    @ExceptionHandler(TokenAuthenticationException.class)
+    public ResponseEntity<Result<?>> handleTokenAuthenticationException(
+            TokenAuthenticationException e, HttpServletRequest request) {
+        String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+        log.warn("令牌认证失败 [{}] [{}]: {}", e.getCode(), requestId, e.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Result.error(e.getCode(), e.getMessage()));
+    }
+
     /**
      * 处理参数校验异常
      * 安全修复V6: 不暴露具体字段名，仅返回通用错误消息

@@ -7,6 +7,7 @@ import com.leo.myblog.entity.OAuth2Authorization;
 import com.leo.myblog.entity.OAuth2Client;
 import com.leo.myblog.entity.User;
 import com.leo.myblog.exception.BusinessException;
+import com.leo.myblog.exception.TokenAuthenticationException;
 import com.leo.myblog.mapper.OAuth2AuthorizationMapper;
 import com.leo.myblog.util.JwtUtil;
 import com.leo.myblog.util.UserAgentParser;
@@ -192,7 +193,7 @@ public class OAuth2TokenService {
     public OAuth2TokenResponse handleRefreshTokenGrant(OAuth2TokenRequest request) {
         String refreshToken = request.getRefreshToken();
         if (refreshToken == null || refreshToken.trim().isEmpty()) {
-            throw new BusinessException("refresh_token 不能为空");
+            throw new TokenAuthenticationException("refresh_token 不能为空");
         }
 
         // 找到对应的授权记录
@@ -203,12 +204,12 @@ public class OAuth2TokenService {
 
         OAuth2Authorization auth = authorizationMapper.selectOne(wrapper);
         if (auth == null) {
-            throw new BusinessException("refresh_token 无效或已过期");
+            throw new TokenAuthenticationException("refresh_token 无效或已过期");
         }
 
         // 检查 refresh_token 是否过期
         if (auth.getRefreshTokenExpiresAt() != null && auth.getRefreshTokenExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new BusinessException("refresh_token 已过期，请重新登录");
+            throw new TokenAuthenticationException("refresh_token 已过期，请重新登录");
         }
 
         // 撤销旧的 access_token 和 refresh_token
@@ -224,7 +225,7 @@ public class OAuth2TokenService {
         // 查询用户
         User user = userCacheService.getUserById(auth.getUserId());
         if (user == null || !user.getEnabled()) {
-            throw new BusinessException("用户不存在或已被禁用");
+            throw new TokenAuthenticationException("用户不存在或已被禁用");
         }
 
         // 生成新的 Token
