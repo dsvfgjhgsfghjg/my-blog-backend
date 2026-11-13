@@ -107,6 +107,11 @@ must report no findings.
 
 Push only after both local scans, backend tests, frontend build, and E2E tests pass.
 
+Backend and frontend CI no longer push images on a normal `master` push. After
+the pull request is reviewed and merged, an operator must run the workflow from
+`master` with `workflow_dispatch`. This keeps merge and production image release
+as separate actions.
+
 Use `--force-with-lease` for every rewritten branch. Push Gitea first, then the
 sanitized GitHub mirror. Do not use an unconditional force push.
 

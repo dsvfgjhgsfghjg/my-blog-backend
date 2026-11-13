@@ -1,8 +1,7 @@
-name: Build, Test and Push Backend
+name: Test Backend and Manual Release
 
 on:
-  push:
-    branches: [ main, master ]
+  workflow_dispatch:
   pull_request:
     branches: [ main, master ]
 
@@ -21,7 +20,7 @@ env:
   MIGRATIONS_IMAGE: 127.0.0.1:3000/leoxiao/backend-migrations
 
 jobs:
-  # 本 workflow 只负责「构建并推送镜像」，不碰生产环境。
+  # MR 只跑测试。镜像仅在从 master/main 手动触发 workflow_dispatch 时构建推送。
   # 部署由宿主侧的 cron（/home/ubuntu/myblog-deploy/deploy.sh）拉取镜像完成。
   # 因此这里不再需要 DB / JWT / MinIO 等任何生产凭据。
   build-test-push:

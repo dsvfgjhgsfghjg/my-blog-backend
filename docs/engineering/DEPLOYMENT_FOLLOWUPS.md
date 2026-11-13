@@ -2,6 +2,8 @@
 
 ## After the first verified production deployment
 
+- Confirm backend and frontend releases were started by explicit
+  `workflow_dispatch`, not by merging a pull request.
 - Remind the user to resume the GitHub public-mirror cleanup.
 - Confirm the GitHub push credential is available outside the prompt and is not
   stored in either repository.
