@@ -52,6 +52,11 @@ class GlobalExceptionHandlerTest {
             throw new BusinessException("用户名已存在");
         }
 
+        @GetMapping("/probe/token-authentication")
+        Result<?> tokenAuthentication() {
+            throw new TokenAuthenticationException("refresh_token 无效或已过期");
+        }
+
         /** 评论特例：handleBusinessException 里那段 data 兜底不能被改动 */
         @GetMapping("/probe/comment")
         Result<?> comment() {
@@ -95,6 +100,15 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(500))
                 .andExpect(jsonPath("$.message").value("用户名已存在"));
+    }
+
+    @Test
+    @DisplayName("TokenAuthenticationException：HTTP 401，body code 也是 401")
+    void tokenAuthenticationMapsToHttp401() throws Exception {
+        mockMvc.perform(get("/probe/token-authentication"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401))
+                .andExpect(jsonPath("$.message").value("refresh_token 无效或已过期"));
     }
 
     @Test
