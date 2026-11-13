@@ -411,21 +411,21 @@ Not completed:
 
 These items cannot be completed by source changes alone:
 
-1. Back up the repositories, database, deployment configuration, and current
-   images before the maintenance window.
+1. Backups are complete for repositories, database, deployment configuration,
+   and current images.
 2. Retry the sanitized GitHub pushes when GitHub Git transport is reachable, then
    confirm the public refs no longer resolve to old commits.
 3. Gitea server-side Git GC, archive cleanup, deleted-branch cleanup, old package
    removal, and package cleanup are complete. Continue to expire any external CI
    caches or source archives that are outside the Gitea data directory.
-4. Revoke the exposed SSH, Git Runner, JWT, database, Redis, MinIO, and administrator
-   credentials before deploying replacement values.
+4. Credential rotation and production deployment are complete. See
+   `PRODUCTION_CUTOVER_20261113.md`.
 5. Complete the disclosure assessment for the exposed dump using the aggregate
    findings above; do not copy the dump back into either repository.
-6. Deploy the backend migrations and images, then the frontend image, and verify
-   login, refresh, logout, registration, TOTP, App native WebSocket, and file access.
-7. Verify from an external host that PostgreSQL, Redis, MinIO, and the backend port
-   are not reachable.
+6. Backend migrations and both application images are deployed. Continue with
+   authenticated browser/App smoke tests when real user credentials are used.
+7. External port verification is complete: PostgreSQL, Redis, MinIO, backend, and
+   Gitea HTTP ports are not reachable.
 8. After history rewrite, rerun Gitleaks in `git` mode against every pushed branch.
 
 The maintenance procedure and rollback checkpoints are documented in

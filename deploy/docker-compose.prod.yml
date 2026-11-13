@@ -58,7 +58,9 @@ services:
       retries: 5
 
   minio-init:
-    image: ${MIRROR:-docker.io}/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    # The MinIO server image already includes mc. Reusing it avoids depending on
+    # a separate mc tag that some registry mirrors do not expose.
+    image: ${MIRROR:-docker.io}/minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: "no"
     depends_on:
       minio:
@@ -79,7 +81,8 @@ services:
         mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         mc mb --ignore-existing "local/$${MINIO_BUCKET_NAME}"
         mc anonymous set none "local/$${MINIO_BUCKET_NAME}"
-        mc admin user add local "$${MINIO_APP_ACCESS_KEY}" "$${MINIO_APP_SECRET_KEY}" || true
+        mc admin user remove local "$${MINIO_APP_ACCESS_KEY}" >/dev/null 2>&1 || true
+        mc admin user add local "$${MINIO_APP_ACCESS_KEY}" "$${MINIO_APP_SECRET_KEY}"
         mc admin policy create local myblog-app /tmp/minio-policy.json || true
         mc admin policy attach local myblog-app --user "$${MINIO_APP_ACCESS_KEY}"
     networks: [myblog-network]
@@ -94,6 +97,10 @@ services:
       FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       FLYWAY_USER: ${DB_MIGRATION_USER}
       FLYWAY_PASSWORD: ${DB_MIGRATION_PASSWORD}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      # Existing production history starts at baseline 1 plus V21-V38. V2-V20
+      # are already represented by the schema and must not be replayed.
+      FLYWAY_IGNORE_MIGRATION_PATTERNS: "*:ignored"
     networks: [myblog-network]
 
   backend:
