@@ -326,9 +326,7 @@ Local verification:
 - Frontend: production build and 2 Playwright E2E tests passed.
 - Frontend production dependencies: `npm audit --omit=dev` reports 0 vulnerabilities.
 - Backend dependencies: OSV scan passed for 123 Maven coordinates.
-- Backend current-tree and historical Gitleaks scan only reports the three removed
-  secret-bearing paths and `.runner` in history. The two frozen root Markdown
-  commits are allowlisted for placeholder Bearer examples only.
+- Backend local and Gitea remote-mirror Gitleaks scans report no leaks.
 - Frontend historical Gitleaks scan passes after allowlisting three frozen
   documentation commits and one vendored public reCAPTCHA test-site key.
 
@@ -338,10 +336,10 @@ Local verification:
 |---|---|
 | SEC-001 browser-readable refresh token | Fixed: access and refresh credentials use separate HttpOnly cookies |
 | SEC-002 production token exposure | Fixed: production requires Secure cookies and browser responses omit tokens |
-| SEC-003 committed SSH private key | Removed from the current tree; remote history rewrite still required |
+| SEC-003 committed SSH private key | Removed from local and Gitea history; GitHub mirror update remains |
 | SEC-004 vulnerable dependency baseline | Fixed: Spring Boot 3.5.16 plus pinned patched transitive dependencies; OSV gate added |
 | SEC-005 public infrastructure ports | Fixed in `deploy/docker-compose.prod.yml`: only the frontend ports are public |
-| SEC-006 public database dump | Removed from the current tree; GitHub history rewrite and data-exposure review still required |
+| SEC-006 public database dump | Removed from local and Gitea history; GitHub mirror update and data-exposure review remain |
 | SEC-101 wildcard credentialed CORS | Fixed: explicit origin allowlist |
 | SEC-102 Cookie-authenticated CSRF | Fixed: Origin/Referer validation for Cookie-authenticated writes |
 | SEC-103 client-credentials scope gap | Fixed: `client_credentials` is disabled |
@@ -368,16 +366,44 @@ Local verification:
 - The public database dump, root compose symlinks, legacy frontend Dockerfile,
   and backend-to-frontend source coupling were removed.
 
+## Execution Record: 2026-11-13
+
+Completed:
+
+- Backend and frontend full refs were backed up outside their repositories under
+  `/home/leo/.local/share/myblog-security-backups/20261113`.
+- Backend history was rewritten to remove `sql/myblog_backup.dump`, `config/.env`,
+  both `config/secrets_config_*.txt` files, `.runner`, and `# 或者使用 RSA`.
+- Frontend history was rewritten to remove `SSH_KEY_SETUP.md`,
+  `CONFIG_MANAGEMENT.md`, and `SECURITY_QUICK_REF.md`.
+- Local and freshly cloned Gitea mirror scans report no secrets.
+- Gitea backend `master` is `649829d`; the security branch is `166924b` before
+  this status-document commit.
+- Gitea frontend `master` is `1219eeb`; the security branch is `c6cc41f`.
+- The App handoff-only commit `1c79923` was pushed to the App repository.
+
+Not completed:
+
+- The current network blocks GitHub Git smart-HTTP, so the public mirror still
+  points at the old history. Gitea is clean, but the public exposure is not closed.
+- Gitea server-side garbage collection and cache/artifact cleanup require server
+  administrator access.
+- Production still serves the old CORS behavior: a request with
+  `Origin: https://evil.example` returned that origin in
+  `Access-Control-Allow-Origin`. The new backend is not deployed.
+- Production database, Redis, MinIO, JWT, TOTP, SSH, Runner, and administrator
+  credentials have not been rotated.
+
 ## Remaining External Actions
 
 These items cannot be completed by source changes alone:
 
 1. Back up the repositories, database, deployment configuration, and current
    images before the maintenance window.
-2. Rewrite backend and frontend history to remove the database dump, configuration
-   secrets, private-key material, Runner token, and obsolete credential examples.
-3. Force-push the sanitized branches to Gitea and the public GitHub mirror, delete
-   stale remote branches, and run server-side Git garbage collection.
+2. Retry the sanitized GitHub pushes when GitHub Git transport is reachable, then
+   confirm the public refs no longer resolve to old commits.
+3. Run Gitea server-side Git garbage collection and expire CI caches, artifacts,
+   and source archives that may retain old objects.
 4. Revoke the exposed SSH, Git Runner, JWT, database, Redis, MinIO, and administrator
    credentials before deploying replacement values.
 5. Inspect the removed PostgreSQL dump in an isolated environment for personal data
