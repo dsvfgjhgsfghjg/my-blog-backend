@@ -387,6 +387,12 @@ Completed:
   with body content. User rows contain no email or phone values.
 - The temporary dump copy and inspection clone were securely removed after the
   aggregate assessment.
+- Gitea storage cleanup reduced package data from approximately `1.8G` to
+  `453M`; old image versions and archive/deleted-branch state were removed.
+- Both `master` branches now deny direct and force pushes and block outdated or
+  rejected-review merges.
+- Seventeen temporary all-scope Gitea tokens were deleted by ID. Only the two CI
+  package-push tokens and the host package-pull token remain.
 
 Not completed:
 

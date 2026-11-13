@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-Usage: scripts/security/gitea-api.sh <GET|POST|DELETE> <path>
+Usage: scripts/security/gitea-api.sh <GET|POST|PUT|PATCH|DELETE> <path> [json-file]
 
 Authentication uses the system keyring token when available, otherwise the
 Gitea username/password loaded from the private environment file. Secrets are
@@ -12,20 +12,26 @@ for loopback addresses.
 EOF
 }
 
-if [ "$#" -ne 2 ]; then
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
   usage
   exit 2
 fi
 
 method=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')
 path=$2
+body_file=${3:-}
 case "$method" in
-  GET|POST|DELETE) ;;
+  GET|POST|PUT|PATCH|DELETE) ;;
   *)
     usage
     exit 2
     ;;
 esac
+
+if [ -n "$body_file" ] && [ ! -r "$body_file" ]; then
+  echo "Request body file is not readable: $body_file" >&2
+  exit 2
+fi
 
 case "$path" in
   /api/v1/*) ;;
@@ -93,6 +99,10 @@ escape_curl_value() {
     printf 'user = "%s:%s"\n' \
       "$(escape_curl_value "$GITEA_USERNAME")" \
       "$(escape_curl_value "$GITEA_PASSWORD")"
+  fi
+  if [ -n "$body_file" ]; then
+    printf 'header = "Content-Type: application/json"\n'
+    printf 'data-binary = "@%s"\n' "$(escape_curl_value "$body_file")"
   fi
   printf 'silent\nshow-error\nfail-with-body\nmax-time = 30\n'
 } | curl --config -

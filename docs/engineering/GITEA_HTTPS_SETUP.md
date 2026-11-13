@@ -59,9 +59,27 @@ Completed with the admin API:
 - Gitea data usage decreased from approximately `1.8G` to `453M`.
 - No Actions artifacts were present.
 
-The Gitea API wrapper supports `GET`, `POST`, and `DELETE`. Git HTTPS operations
-use `scripts/security/gitea-git.sh`, which reads the private environment file
-without prompting for a password.
+The Gitea API wrapper supports `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`, with
+JSON request bodies supplied through a temporary file. Git HTTPS operations use
+`scripts/security/gitea-git.sh`, which reads the private environment file without
+prompting for a password.
+
+## Access Review: 2026-11-13
+
+- Enabled `master` branch protection in both repositories:
+  - direct push disabled
+  - force push disabled
+  - outdated branches cannot merge
+  - rejected reviews block merge
+  - stale approvals are dismissed
+  - zero mandatory approvals to avoid locking a single-owner repository
+- The only account SSH key is the current `leo@myblog-1.27` Ed25519 key.
+- No repository deploy keys are configured.
+- Removed 17 temporary `codex-*` all-scope access tokens after verifying that
+  deletion by name had not taken effect on this Gitea version. Deletion was then
+  performed by token ID.
+- Remaining access tokens are limited to the two CI package-push tokens and one
+  host package-pull token.
 
 ## Required Settings
 
