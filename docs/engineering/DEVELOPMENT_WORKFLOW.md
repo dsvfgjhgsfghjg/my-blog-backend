@@ -147,7 +147,8 @@ When backend and frontend change together:
 - Do not mix backend and frontend commits.
 - Push to Gitea `origin` first.
 - GitHub is a sanitized public mirror, never the source of secrets or private operational files.
-- Do not force-push shared branches.
+- Do not force-push shared branches, except during an approved secret-removal
+  maintenance using the security release runbook and `--force-with-lease`.
 - Do not deploy a security-sensitive change without an explicit rollback path.
 
 ## 8. Definition of Done

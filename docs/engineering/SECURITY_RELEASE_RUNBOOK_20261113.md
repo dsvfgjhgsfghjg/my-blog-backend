@@ -116,7 +116,6 @@ On the Git server, run garbage collection after every reachable reference has
 been removed:
 
 ```bash
-git gc --prune=now
 git reflog expire --expire=now --all
 git gc --prune=now
 ```
