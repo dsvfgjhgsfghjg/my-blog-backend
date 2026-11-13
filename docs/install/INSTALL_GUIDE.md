@@ -127,8 +127,8 @@ bash scripts/upload-captcha-to-minio.sh
 
 **Docker 模式:**
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f
+docker compose -f deploy/docker-compose.prod.yml ps
+docker compose -f deploy/docker-compose.prod.yml logs -f
 ```
 
 **宿主机模式:**
@@ -140,7 +140,7 @@ cat logs/backend.log
 
 **Docker 模式:**
 ```bash
-docker compose -f docker-compose.prod.yml down
+docker compose -f deploy/docker-compose.prod.yml down
 ```
 
 **宿主机模式:**
@@ -208,7 +208,7 @@ myblog/
 ├── docs/
 │   └── install/
 │       └── INSTALL_GUIDE.md # 本安装文档
-├── docker-compose.prod.yml  # Docker Compose 生产配置
+├── deploy/docker-compose.prod.yml  # Docker Compose 生产配置
 ├── docker-compose.yml       # Docker Compose 开发配置
 ├── .env                     # 环境变量（安装时生成）
 ├── .myblog_installed        # 安装锁文件

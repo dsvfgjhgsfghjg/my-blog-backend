@@ -134,14 +134,39 @@ jwt:
   # 生产必须通过 JWT_SECRET 环境变量注入 —— JwtUtil 会在 prod profile 下强制校验
   # 环境变量确实存在，否则拒绝启动：用公开默认值启动意味着任何人都能伪造 admin token。
   secret: ${JWT_SECRET:your_jwt_secret_key_here_change_it_to_a_long_random_string}
-  expiration: 86400000  # token过期时间（毫秒），默认24小时
+  expiration: 3600000  # access token 过期时间（毫秒），默认1小时
   header: Authorization  # HTTP头名称
   prefix: Bearer         # token前缀
   cookie:
     name: AUTH_TOKEN     # Cookie名称
-    max-age: 86400       # Cookie过期时间（秒），默认24小时
+    max-age: 3600        # access Cookie过期时间（秒）
     secure: false        # 仅HTTPS传输（生产环境必须设为true）
-    expose-token-in-body: true  # 登录响应体中是否返回Token（Cookie模式下建议设为false）
+  refresh-cookie:
+    name: REFRESH_TOKEN
+    max-age: 2592000     # refresh Cookie过期时间（秒），默认30天
+    path: /api/auth2
+
+# =====================
+# 应用安全配置
+# =====================
+app:
+  security:
+    cors:
+      allowed-origins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
+        - https://leo-blog.top
+        - https://www.leo-blog.top
+    trusted-proxy-cidrs:
+      - 127.0.0.1/32
+      - ::1/128
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+
+# TOTP secret at-rest encryption. Production must provide a separate random key.
+totp:
+  encryption-key: ${TOTP_ENCRYPTION_KEY:ZGV2LW9ubHktMzItYnl0ZS10b3RwLWtleS0wMDAwMDA=}
 
 # =====================
 # 日志配置

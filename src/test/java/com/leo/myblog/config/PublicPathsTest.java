@@ -123,6 +123,7 @@ class PublicPathsTest {
         assertPublic("POST", "/api/auth/app/bind", "App 绑定在设备未绑定时调用（AppAuthController:61）");
         assertPublic("POST", "/api/auth/app/device-secret", "设备码生成公开（AppAuthController:43）");
         assertPublic("GET", "/api/users/avatar/public/9", "公开头像（UserController:402）");
+        assertPublic("GET", "/ws/app/auth/native", "App 原生 WebSocket 握手（内部再做 JWT/设备密钥认证）");
 
         // —— 反例 ——
         assertNotPublic("GET", "/api/auth/app/status",
@@ -131,6 +132,10 @@ class PublicPathsTest {
                 "AppAuthController:96 不在白名单内，不得被精确项 /api/auth/app/bind 顺带放行");
         assertNotPublic("GET", "/api/users/avatar/publicXYZ",
                 "前缀必须是 /api/users/avatar/public/，去掉末尾斜杠会放宽到同前缀的其它路径");
+        assertNotPublic("GET", "/ws/app/auth", "浏览器 SockJS 端点已下线");
+        assertNotPublic("POST", "/api/auth2/oauth/login", "第三方 OAuth 登录已下线");
+        assertNotPublic("POST", "/api/auth2/oauth/callback", "第三方 OAuth 回调已下线");
+        assertNotPublic("POST", "/api/admin/invites", "邀请码管理必须认证且仅超级管理员可用");
     }
 
     @Test

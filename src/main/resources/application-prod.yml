@@ -15,6 +15,17 @@ logging:
     com.leo.myblog: INFO
     org.springframework.security: WARN
 
+jwt:
+  cookie:
+    secure: true
+
+app:
+  security:
+    cors:
+      allowed-origins:
+        - https://leo-blog.top
+        - https://www.leo-blog.top
+
 mybatis-plus:
   configuration:
     # ⚠️ 关掉 SQL 打屏。application.yml 里用的是 StdOutImpl，注释虽写「开发环境」，

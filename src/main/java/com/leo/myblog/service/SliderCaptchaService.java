@@ -95,8 +95,7 @@ public class SliderCaptchaService {
         captcha.setCanvasSize(SliderCaptchaUtils.DEFAULT_CANVAS_SIZE);
         captcha.setImageSourceHint(imageSourceHint);
 
-        log.debug("生成旋转验证码: nonceStr={}, rotationAngle={}°, source={}",
-                nonceStr, rotationAngle, imageSourceHint);
+        log.debug("生成旋转验证码: nonceStr={}, source={}", nonceStr, imageSourceHint);
 
         return captcha;
     }
@@ -122,7 +121,7 @@ public class SliderCaptchaService {
                                   java.util.List<TrajectoryPoint> trajectory,
                                   Long totalTime) {
         if (nonceStr == null || userAngle == null) {
-            log.warn("验证码参数为空: nonceStr={}, userAngle={}", nonceStr, userAngle);
+            log.warn("验证码参数为空: nonceStr={}", nonceStr);
             return false;
         }
 
@@ -194,12 +193,11 @@ public class SliderCaptchaService {
         boolean passed = anglePassed && behaviorPassed;
 
         if (passed) {
-            log.info("✅ 旋转验证码验证通过: nonceStr={}, rotationAngle={}°, userAngle={}°, combined={}°, behavior={}",
-                    nonceStr, rotationAngle, userAngle, combinedAngle, behaviorInfo);
+            log.info("旋转验证码验证通过: nonceStr={}, behavior={}",
+                    nonceStr, behaviorInfo);
         } else {
-            log.warn("❌ 旋转验证码验证失败: nonceStr={}, rotation={}°, user={}°, combined={}°, anglePassed={}, behaviorPassed={}, info={}",
-                    nonceStr, rotationAngle, userAngle, combinedAngle,
-                    anglePassed, behaviorPassed, behaviorInfo);
+            log.warn("旋转验证码验证失败: nonceStr={}, anglePassed={}, behaviorPassed={}, info={}",
+                    nonceStr, anglePassed, behaviorPassed, behaviorInfo);
         }
 
         return passed;

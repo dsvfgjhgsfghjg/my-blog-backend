@@ -71,8 +71,9 @@ public class OAuth2TokenService {
         return switch (grantType) {
             case "password" -> handlePasswordGrant(request, clientIp, userAgent);
             case "refresh_token" -> handleRefreshTokenGrant(request);
-            case "client_credentials" -> handleClientCredentialsGrant(request);
             case "authorization_code" -> handleAuthorizationCodeGrant(request);
+            case "client_credentials" ->
+                    throw new BusinessException(400, "client_credentials grant 已禁用");
             default -> throw new BusinessException("不支持的 grant_type: " + grantType);
         };
     }
@@ -230,61 +231,6 @@ public class OAuth2TokenService {
         return createTokenResponse(user, auth.getClientId(), "refresh_token");
     }
 
-    // ==================== Client Credentials Grant ====================
-
-    /**
-     * 客户端凭证模式（机器对机器通信）
-     */
-    private OAuth2TokenResponse handleClientCredentialsGrant(OAuth2TokenRequest request) {
-        String clientId = request.getClientId();
-        String clientSecret = request.getClientSecret();
-
-        if (clientId == null || clientSecret == null) {
-            throw new BusinessException("client_id 和 client_secret 不能为空");
-        }
-
-        // 验证客户端
-        OAuth2Client client = oAuth2ClientService.getByClientId(clientId);
-        if (client == null || !client.getIsEnabled()) {
-            throw new BusinessException("客户端不存在或已被禁用");
-        }
-
-        if (!oAuth2ClientService.validateClientSecret(clientId, clientSecret)) {
-            throw new BusinessException("客户端密钥错误");
-        }
-
-        // 检查 grant_type 支持
-        List<String> grantTypes = oAuth2ClientService.parseJsonArray(client.getGrantTypes());
-        if (!grantTypes.contains("client_credentials")) {
-            throw new BusinessException("该客户端不支持 client_credentials grant type");
-        }
-
-        // 生成客户端凭证 Token（无用户关联）
-        String accessToken = jwtUtil.generateToken(-1L, "client_" + clientId); // 特殊 ID 标识
-
-        // 记录授权
-        String accessTokenHash = sha256(accessToken);
-        OAuth2Authorization auth = new OAuth2Authorization();
-        auth.setClientId(clientId);
-        auth.setUserId(null); // 无用户关联
-        auth.setAccessTokenHash(accessTokenHash);
-        auth.setGrantType("client_credentials");
-        auth.setScope(client.getScopes());
-        auth.setAuthTime(LocalDateTime.now());
-        auth.setAccessTokenExpiresAt(LocalDateTime.now().plusSeconds(accessTokenExpiresIn));
-        auth.setIsRevoked(false);
-        authorizationMapper.insert(auth);
-
-        log.info("OAuth2 client_credentials Token 颁发: clientId={}", clientId);
-
-        return OAuth2TokenResponse.builder()
-                .accessToken(accessToken)
-                .tokenType("Bearer")
-                .expiresIn(accessTokenExpiresIn)
-                .scope(client.getScopes())
-                .build();
-    }
-
     // ==================== Authorization Code Grant ====================
 
     /**
@@ -418,6 +364,30 @@ public class OAuth2TokenService {
         }
 
         log.info("OAuth2 Token 已撤销: userId={}, clientId={}", auth.getUserId(), auth.getClientId());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void revokeRefreshToken(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+        String refreshTokenHash = sha256(refreshToken);
+        LambdaQueryWrapper<OAuth2Authorization> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(OAuth2Authorization::getRefreshTokenHash, refreshTokenHash);
+        wrapper.eq(OAuth2Authorization::getIsRevoked, false);
+        OAuth2Authorization auth = authorizationMapper.selectOne(wrapper);
+        if (auth == null) {
+            return;
+        }
+        auth.setIsRevoked(true);
+        auth.setRevokedAt(LocalDateTime.now());
+        authorizationMapper.updateById(auth);
+        if (auth.getUserId() != null && auth.getAccessTokenHash() != null) {
+            tokenBlacklistService.addToBlacklistByHash(
+                    auth.getUserId(), auth.getAccessTokenHash(), (long) accessTokenExpiresIn);
+        }
+        log.info("OAuth2 Refresh Token 已撤销: userId={}, clientId={}",
+                auth.getUserId(), auth.getClientId());
     }
 
     /**

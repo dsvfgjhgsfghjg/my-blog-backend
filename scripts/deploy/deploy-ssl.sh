@@ -1,4 +1,16 @@
 #!/bin/bash
+
+cat <<'EOF'
+该脚本属于旧的前后端同目录部署流程，已停用。
+
+前端 TLS 容器由独立仓库 /home/leo/WebstormProjects/myblog 的 CI 构建，
+后端与基础设施统一使用：
+
+  docker compose -f deploy/docker-compose.prod.yml up -d
+
+不要从后端仓库复制 Dockerfile.frontend 或前端源码。
+EOF
+exit 1
 # ============================================
 # SSL 证书配置快速部署脚本
 # ============================================

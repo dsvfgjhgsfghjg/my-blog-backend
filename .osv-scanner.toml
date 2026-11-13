@@ -1,0 +1,9 @@
+[[IgnoredVulns]]
+id = "GHSA-j9f9-w8pj-32f8"
+effectiveUntil = 2027-02-01
+reason = "Spring Framework 7.0.9 fix; Boot 3.5.16 app does not render SSE fragments."
+
+[[IgnoredVulns]]
+id = "GHSA-pc63-qcmh-9cmg"
+effectiveUntil = 2027-02-01
+reason = "Spring Framework 7.0.9 fix; application does not use XsltView."

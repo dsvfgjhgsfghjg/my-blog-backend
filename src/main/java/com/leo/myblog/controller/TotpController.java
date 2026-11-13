@@ -5,6 +5,7 @@ import com.leo.myblog.service.SystemConfigService;
 import com.leo.myblog.service.TotpService;
 import com.leo.myblog.service.TotpSessionService;
 import com.leo.myblog.service.UserService;
+import com.leo.myblog.service.MfaAttemptService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,7 @@ public class TotpController {
     private final UserService userService;
     private final TotpSessionService totpSessionService;
     private final SystemConfigService systemConfigService;
+    private final MfaAttemptService mfaAttemptService;
     
     /**
      * 生成 TOTP 密钥和二维码
@@ -49,11 +51,14 @@ public class TotpController {
                                     @RequestBody TotpEnableRequest request) {
         log.info("启用 TOTP: userId={}", userId);
         
+        mfaAttemptService.assertAllowed(userId);
         boolean success = totpService.enableTotp(userId, request.getCode());
         
         if (success) {
+            mfaAttemptService.recordSuccess(userId);
             return Result.success();
         } else {
+            mfaAttemptService.recordFailure(userId);
             return Result.error(400, "验证码错误，请重试");
         }
     }
@@ -134,6 +139,7 @@ public class TotpController {
             return Result.error(400, "您尚未启用双因素认证，请先到安全设置中绑定 TOTP");
         }
         
+        mfaAttemptService.assertAllowed(userId);
         boolean isValid;
         
         // 判断是 TOTP 码还是备份码
@@ -148,10 +154,12 @@ public class TotpController {
         }
         
         if (isValid) {
+            mfaAttemptService.recordSuccess(userId);
             // 验证成功后创建 TOTP 会话，后续带 TOTP Session 的请求无需重复验证
             totpSessionService.createSession(userId);
             log.info("TOTP 验证成功并创建会话: userId={}", userId);
         } else {
+            mfaAttemptService.recordFailure(userId);
             log.warn("TOTP 验证码错误: userId={}, codeLength={}", userId, request.getCode().length());
         }
         

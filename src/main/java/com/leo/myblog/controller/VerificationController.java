@@ -11,6 +11,8 @@ import com.leo.myblog.service.LoginService;
 import com.leo.myblog.service.TotpService;
 import com.leo.myblog.service.TotpSessionService;
 import com.leo.myblog.service.SystemConfigService;
+import com.leo.myblog.service.MfaAttemptService;
+import com.leo.myblog.security.ClientIpResolver;
 import com.leo.myblog.websocket.WebSocketSessionManager;
 import com.leo.myblog.websocket.AuthWebSocketHandler;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -38,6 +40,8 @@ public class VerificationController {
     private final WebSocketSessionManager webSocketSessionManager;
     private final AuthWebSocketHandler authWebSocketHandler;
     private final SystemConfigService systemConfigService;
+    private final MfaAttemptService mfaAttemptService;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * 查询验证状态
@@ -103,6 +107,7 @@ public class VerificationController {
             return Result.error(400, "TOTP 验证码不能为空");
         }
 
+        mfaAttemptService.assertAllowed(userId);
         boolean isValid;
         if (code.length() == 6) {
             isValid = totpService.verifyTotpCode(userId, code.trim());
@@ -113,8 +118,10 @@ public class VerificationController {
         }
 
         if (!isValid) {
+            mfaAttemptService.recordFailure(userId);
             return Result.error(401, "TOTP 验证码错误或已过期");
         }
+        mfaAttemptService.recordSuccess(userId);
 
         // 创建 TOTP 会话
         totpSessionService.createSession(userId);
@@ -240,22 +247,9 @@ public class VerificationController {
                                                        jakarta.servlet.http.HttpServletRequest httpRequest) {
         LoginPollResponse pollResult = loginService.pollLoginResult(
                 challengeId,
-                getClientIp(httpRequest),
+                clientIpResolver.resolve(httpRequest),
                 httpRequest.getHeader("User-Agent"));
         return Result.success(pollResult);
     }
 
-    private String getClientIp(jakarta.servlet.http.HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip != null ? ip : "unknown";
-    }
 }

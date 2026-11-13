@@ -461,8 +461,8 @@ public class AppAuthService {
 
         long expiresAt = System.currentTimeMillis() / 1000 + CHALLENGE_TIMEOUT_SECONDS;
 
-        log.info("生成挑战: challengeId={}, userId={}, numbers={}, correctIndex={}",
-                challengeId, userId, Arrays.toString(numbers), correctIndex);
+        log.info("生成挑战: challengeId={}, userId={}, expiresAt={}",
+                challengeId, userId, expiresAt);
 
         return new ChallengeInfo(challengeId, numbers, correctNumber, expiresAt);
     }

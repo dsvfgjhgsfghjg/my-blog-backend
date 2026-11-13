@@ -1,12 +1,15 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.2.5'
+    id 'org.springframework.boot' version '3.5.16'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
 group = 'com.leo'
 version = '0.0.1-SNAPSHOT'
 description = 'myblog'
+
+ext['tomcat.version'] = '10.1.59'
+ext['jackson-bom.version'] = '2.21.7'
 
 java {
     toolchain {
@@ -37,7 +40,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     
     // MinIO
-    implementation 'io.minio:minio:8.5.7'
+    implementation 'io.minio:minio:8.6.0'
     
     // Flyway 数据库迁移
     implementation 'org.flywaydb:flyway-core'
@@ -57,7 +60,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     
     // XML Processing (SVG安全清洗)
-    implementation 'org.jsoup:jsoup:1.17.2'
+    implementation 'org.jsoup:jsoup:1.23.2'
     implementation 'xerces:xercesImpl:2.12.2'
     
     // TOTP 双因素认证
@@ -67,7 +70,18 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     
     // Bouncy Castle (密码学库，支持 SM4 等国密算法)
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.85'
+
+    // MinIO 8.6.0 still resolves the vulnerable HTTP client transitively.
+    implementation 'org.apache.httpcomponents:httpclient:4.5.14'
+    implementation platform('io.netty:netty-bom:4.1.137.Final')
+    implementation 'io.netty:netty-codec:4.1.137.Final'
+    implementation 'io.netty:netty-handler:4.1.137.Final'
+    implementation 'com.google.guava:guava:33.7.2-jre'
+    implementation 'org.apache.commons:commons-lang3:3.18.0'
+    implementation 'org.apache.logging.log4j:log4j-api:2.25.5'
+    implementation 'org.xerial.snappy:snappy-java:1.1.10.9'
+    runtimeOnly 'org.postgresql:postgresql:42.7.12'
     
     // Lombok (简化代码)
     compileOnly 'org.projectlombok:lombok'

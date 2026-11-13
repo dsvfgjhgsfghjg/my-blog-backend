@@ -17,14 +17,14 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # 检查 Docker Compose 文件是否存在
-if [ ! -f "docker-compose.prod.yml" ]; then
-    echo -e "${RED}错误: docker-compose.prod.yml 文件不存在${NC}"
+if [ ! -f "deploy/docker-compose.prod.yml" ]; then
+    echo -e "${RED}错误: deploy/docker-compose.prod.yml 文件不存在${NC}"
     exit 1
 fi
 
 # 检查容器状态
 echo -e "${YELLOW}检查容器状态...${NC}"
-CONTAINERS=$(docker-compose -f docker-compose.prod.yml ps --services 2>/dev/null)
+CONTAINERS=$(docker compose -f deploy/docker-compose.prod.yml ps --services 2>/dev/null)
 
 if [ -z "$CONTAINERS" ]; then
     echo -e "${RED}错误: 没有运行中的容器${NC}"
@@ -33,7 +33,7 @@ if [ -z "$CONTAINERS" ]; then
 fi
 
 for container in $CONTAINERS; do
-    STATUS=$(docker-compose -f docker-compose.prod.yml ps $container | tail -n +2 | awk '{print $NF}')
+    STATUS=$(docker compose -f deploy/docker-compose.prod.yml ps $container | tail -n +2 | awk '{print $NF}')
     if [[ $STATUS == *"Up"* ]]; then
         echo -e "${GREEN}✓ $container: 运行中${NC}"
     else
@@ -118,5 +118,5 @@ echo "  - 后端 API:     http://$(curl -s ifconfig.me 2>/dev/null || echo '你�
 echo "  - MinIO Console: http://$(curl -s ifconfig.me 2>/dev/null || echo '你的服务器IP'):9001/"
 echo ""
 echo "查看详细日志:"
-echo "  docker-compose -f docker-compose.prod.yml logs -f"
+echo "  docker compose -f deploy/docker-compose.prod.yml logs -f"
 echo ""

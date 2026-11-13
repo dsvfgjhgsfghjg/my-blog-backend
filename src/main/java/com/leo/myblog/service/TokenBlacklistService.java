@@ -1,5 +1,6 @@
 package com.leo.myblog.service;
 
+import com.leo.myblog.security.TokenHashUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -26,13 +27,7 @@ public class TokenBlacklistService {
      * @param expirationSeconds Token 剩余有效期（秒）
      */
     public void addToBlacklist(Long userId, String token, long expirationSeconds) {
-        String key = BLACKLIST_PREFIX + userId + ":" + token.hashCode();
-        try {
-            redisTemplate.opsForValue().set(key, "blacklisted", expirationSeconds, TimeUnit.SECONDS);
-            log.info("Token已加入黑名单: userId={}, 过期时间={}秒", userId, expirationSeconds);
-        } catch (Exception e) {
-            log.error("加入Token黑名单失败: userId={}", userId, e);
-        }
+        addToBlacklistByHash(userId, TokenHashUtils.sha256(token), expirationSeconds);
     }
 
     /**
@@ -43,12 +38,8 @@ public class TokenBlacklistService {
      */
     public void addToBlacklistByHash(Long userId, String tokenHash, long expirationSeconds) {
         String key = BLACKLIST_PREFIX + userId + ":" + tokenHash;
-        try {
-            redisTemplate.opsForValue().set(key, "blacklisted", expirationSeconds, TimeUnit.SECONDS);
-            log.info("Token已通过Hash加入黑名单: userId={}, tokenHash={}, 过期时间={}秒", userId, tokenHash, expirationSeconds);
-        } catch (Exception e) {
-            log.error("通过Hash加入Token黑名单失败: userId={}, tokenHash={}", userId, tokenHash, e);
-        }
+        redisTemplate.opsForValue().set(key, "blacklisted", expirationSeconds, TimeUnit.SECONDS);
+        log.info("Token已通过Hash加入黑名单: userId={}, 过期时间={}秒", userId, expirationSeconds);
     }
     
     /**
@@ -58,13 +49,8 @@ public class TokenBlacklistService {
      * @return true-在黑名单中，false-不在黑名单中
      */
     public boolean isBlacklisted(Long userId, String token) {
-        String key = BLACKLIST_PREFIX + userId + ":" + token.hashCode();
-        try {
-            return Boolean.TRUE.equals(redisTemplate.hasKey(key));
-        } catch (Exception e) {
-            log.error("检查Token黑名单失败: userId={}", userId, e);
-            return false;
-        }
+        String key = BLACKLIST_PREFIX + userId + ":" + TokenHashUtils.sha256(token);
+        return Boolean.TRUE.equals(redisTemplate.hasKey(key));
     }
     
     /**

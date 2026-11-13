@@ -123,6 +123,18 @@ jobs:
         # 而不是让坏代码照样构建、推送、上线。
         run: ./gradlew test
 
+      - name: Secret scan
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            docker.io/zricethezav/gitleaks:latest git /repo \
+            --config /repo/.gitleaks.toml --redact --verbose
+
+      - name: Dependency vulnerability scan
+        run: |
+          apk add --no-cache curl jq
+          sh scripts/security/scan-dependencies.sh
+
       # ============================================
       # 构建并推送镜像（仅 master/main）
       # ============================================

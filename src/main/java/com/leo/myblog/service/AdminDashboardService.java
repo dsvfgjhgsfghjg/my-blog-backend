@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.leo.myblog.dto.response.DashboardResponse;
 import com.leo.myblog.entity.*;
 import com.leo.myblog.mapper.*;
+import com.leo.myblog.security.ClientIpResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class AdminDashboardService {
     private final AuditLogMapper auditLogMapper;
     private final LoginLogMapper loginLogMapper;
     private final UserService userService;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * 获取控制台主页仪表盘数据
@@ -116,7 +118,7 @@ public class AdminDashboardService {
         User user = userService.getUserById(userId);
 
         DashboardResponse.LoginInfo loginInfo = new DashboardResponse.LoginInfo();
-        loginInfo.setCurrentIp(getClientIp());
+        loginInfo.setCurrentIp(clientIpResolver.resolveCurrentRequest());
         loginInfo.setLastLoginIp(user != null ? user.getLastLoginIp() : "unknown");
         loginInfo.setLastLoginTime(user != null ? user.getLastLoginTime() : null);
         loginInfo.setLoginCount(user != null ? user.getLoginCount() : 0L);
@@ -635,34 +637,4 @@ public class AdminDashboardService {
         return userMapper.selectCount(wrapper);
     }
 
-    /**
-     * 获取当前请求的客户端IP地址
-     */
-    private String getClientIp() {
-        try {
-            org.springframework.web.context.request.ServletRequestAttributes attributes =
-                    (org.springframework.web.context.request.ServletRequestAttributes)
-                            org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-            if (attributes != null) {
-                jakarta.servlet.http.HttpServletRequest request = attributes.getRequest();
-
-                String ip = request.getHeader("X-Forwarded-For");
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("X-Real-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getRemoteAddr();
-                }
-
-                if (ip != null && ip.contains(",")) {
-                    ip = ip.split(",")[0].trim();
-                }
-
-                return ip != null ? ip : "unknown";
-            }
-        } catch (Exception e) {
-            log.warn("获取客户端IP失败", e);
-        }
-        return "unknown";
-    }
 }

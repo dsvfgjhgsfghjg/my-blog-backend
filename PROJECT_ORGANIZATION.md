@@ -98,7 +98,7 @@ SQL 相关文件已统一存放在 `sql/` 目录：
 - create_audio_table.sql
 - init-db.sh
 - init-minio.sh
-- myblog_backup.dump
+- myblog_schema.sql（完整脱敏 schema，配合 Flyway baseline 38）
 
 ### 4. .gitignore 更新
 

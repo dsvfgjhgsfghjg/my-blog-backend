@@ -16,6 +16,8 @@ import com.leo.myblog.exception.BusinessException;
 import com.leo.myblog.exception.ForbiddenException;
 import com.leo.myblog.mapper.UserMapper;
 import com.leo.myblog.util.JwtUtil;
+import com.leo.myblog.util.PasswordPolicy;
+import com.leo.myblog.security.ClientIpResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -52,13 +54,16 @@ public class UserService {
     private final IpBanService ipBanService;  // IP封禁服务
     private final NotificationService notificationService;  // 站内通知服务
     private final SessionRevocationService sessionRevocationService;  // 登录态吊销
+    private final InviteCodeService inviteCodeService;
+    private final PasswordPolicy passwordPolicy;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * 用户注册
      * 安全修复V8: 用户名规范化处理（去除首尾空白、转小写）
      */
     @Transactional(rollbackFor = Exception.class)
-    public LoginResponse register(RegisterRequest request) {
+    public Long register(RegisterRequest request) {
         // 安全修复V8: 用户名规范化 - 去除首尾空白并转小写
         String normalizedUsername = request.getUsername().trim().toLowerCase();
         
@@ -73,6 +78,9 @@ public class UserService {
         if (userMapper.selectCount(wrapper) > 0) {
             throw new BusinessException("用户名已存在");
         }
+
+        passwordPolicy.validate(normalizedUsername, request.getPassword());
+        inviteCodeService.validateAvailable(request.getInviteCode());
         
         // 创建用户（使用规范化后的用户名）
         User user = new User();
@@ -80,15 +88,16 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setNickname(request.getNickname() != null ? request.getNickname() : normalizedUsername);
         user.setIsAdmin(false);
+        user.setIsSuperAdmin(false);
         user.setEnabled(true);
         user.setCreateTime(LocalDateTime.now());
         
         userMapper.insert(user);
+        inviteCodeService.consume(request.getInviteCode(), user.getId());
         
         log.info("用户注册成功：{}", user.getUsername());
         
-        // 生成Token并返回
-        return generateLoginResponse(user);
+        return user.getId();
     }
     
     /**
@@ -132,8 +141,7 @@ public class UserService {
         );
         
         if (!captchaPassed) {
-            log.warn("❌ 旋转验证码验证失败: nonceStr={}, angle={}",
-                    request.getCaptchaNonceStr(), request.getCaptchaAngle());
+            log.warn("旋转验证码验证失败: nonceStr={}", request.getCaptchaNonceStr());
             throw new BusinessException("验证码验证失败，请重试");
         }
 
@@ -349,6 +357,8 @@ public class UserService {
         if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
             throw new BusinessException("旧密码错误");
         }
+
+        passwordPolicy.validate(user.getUsername(), request.getNewPassword());
         
         // 更新新密码
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
@@ -446,10 +456,7 @@ public class UserService {
             throw new BusinessException("用户不存在");
         }
         
-        // 验证密码强度
-        if (newPassword == null || newPassword.length() < 6) {
-            throw new BusinessException("密码长度不能少于6位");
-        }
+        passwordPolicy.validate(user.getUsername(), newPassword);
         
         // 使用管理员提供的新密码
         user.setPassword(passwordEncoder.encode(newPassword));
@@ -634,8 +641,9 @@ public class UserService {
     private String generateRandomPassword() {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         StringBuilder sb = new StringBuilder();
+        java.security.SecureRandom random = new java.security.SecureRandom();
         for (int i = 0; i < 10; i++) {
-            sb.append(chars.charAt((int) (Math.random() * chars.length())));
+            sb.append(chars.charAt(random.nextInt(chars.length())));
         }
         return sb.toString();
     }
@@ -644,37 +652,7 @@ public class UserService {
      * 获取客户端IP地址
      */
     private String getClientIpAddress() {
-        try {
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (attributes != null) {
-                HttpServletRequest request = attributes.getRequest();
-                
-                // 尝试从代理头中获取真实IP
-                String ip = request.getHeader("X-Forwarded-For");
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("X-Real-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("Proxy-Client-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("WL-Proxy-Client-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getRemoteAddr();
-                }
-                
-                // 对于通过多个代理的情况，第一个IP为客户端真实IP
-                if (ip != null && ip.contains(",")) {
-                    ip = ip.split(",")[0].trim();
-                }
-                
-                return ip;
-            }
-        } catch (Exception e) {
-            log.warn("获取客户端IP失败", e);
-        }
-        return "unknown";
+        return clientIpResolver.resolveCurrentRequest();
     }
     
     /**

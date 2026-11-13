@@ -19,7 +19,7 @@ cp -r ~/WebstormProjects/myblog/dist ./dist/
 
 # 4. 启动 Docker Compose
 echo "🐳 启动容器..."
-docker compose -f docker-compose.local.yml up -d
+docker compose -f deploy/docker-compose.local.yml up -d
 
 # 5. 等待服务启动
 echo "⏳ 等待服务启动..."
@@ -30,11 +30,19 @@ echo "🪣 创建 MinIO Bucket..."
 docker exec myblog-minio-local mc alias set myminio http://localhost:9000 minioadmin minioadmin
 docker exec myblog-minio-local mc mb myminio/myblog || echo "Bucket 已存在"
 
-# 7. 导入数据库（如果有备份）
-if [ -f "./myblog_backup.dump" ]; then
-    echo "💾 导入数据库备份..."
-    docker exec -i myblog-postgres-local pg_restore -U postgres -d myblog < ./myblog_backup.dump
-fi
+# 7. 初始化 schema，并由 Flyway 建立 V38 基线后执行后续迁移
+docker exec -i myblog-postgres-local psql -U postgres -d myblog < ./sql/myblog_schema.sql
+docker run --rm --network host \
+    -v "$(pwd)/src/main/resources/db/migration:/flyway/sql:ro" \
+    flyway/flyway:10-alpine \
+    -url=jdbc:postgresql://localhost:5432/myblog \
+    -user=postgres -password=postgres -connectRetries=30 \
+    baseline -baselineVersion=38 -baselineDescription="existing schema baseline" || true
+docker run --rm --network host \
+    -v "$(pwd)/src/main/resources/db/migration:/flyway/sql:ro" \
+    flyway/flyway:10-alpine \
+    -url=jdbc:postgresql://localhost:5432/myblog \
+    -user=postgres -password=postgres -connectRetries=30 migrate
 
 echo ""
 echo "✅ 本地环境启动完成！"
@@ -45,7 +53,7 @@ echo "   后端 API: http://localhost:8080"
 echo "   MinIO Console: http://localhost:9001 (minioadmin/minioadmin)"
 echo ""
 echo "📊 查看日志："
-echo "   docker compose -f docker-compose.local.yml logs -f"
+echo "   docker compose -f deploy/docker-compose.local.yml logs -f"
 echo ""
 echo "🛑 停止服务："
-echo "   docker compose -f docker-compose.local.yml down"
+echo "   docker compose -f deploy/docker-compose.local.yml down"

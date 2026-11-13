@@ -1,5 +1,6 @@
 package com.leo.myblog.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 /**
@@ -10,6 +11,7 @@ import lombok.Data;
  * Token 刷新链路也无需区分登录方式。
  */
 @Data
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class LoginPollResponse {
 
     /**
