@@ -37,6 +37,8 @@ Account/password environment fallback:
 5. `scripts/security/gitea-api.sh` loads the file automatically.
 6. To load the values into the current terminal, use
    `source scripts/security/load-gitea-env.sh`.
+7. For HTTPS Git operations without a password prompt, use
+   `scripts/security/gitea-git.sh`.
 
 Environment variables can be inherited by child processes, so prefer the system
 keyring token whenever possible. Never commit the generated environment file.
