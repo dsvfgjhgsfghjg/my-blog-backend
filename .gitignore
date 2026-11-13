@@ -150,6 +150,8 @@ cache/
 logs/
 *.pid
 *.gz
+__pycache__/
+*.py[cod]
 # 或者使用 RSA (key files with special names)
 \# 或者使用 RSA
 \# 或者使用 RSA.pub
