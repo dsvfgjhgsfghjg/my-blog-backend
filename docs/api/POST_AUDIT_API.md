@@ -64,8 +64,8 @@ Authorization: Bearer YOUR_ADMIN_TOKEN
         "isTop": false,
         "viewCount": "0",
         "tags": null,
-        "createTime": "2026-09-01T10:00:00",
-        "updateTime": "2026-09-01T10:00:00",
+        "createTime": "2026-09-01T10:00:00Z",
+        "updateTime": "2026-09-01T10:00:00Z",
         "publishTime": null
       }
     ],
@@ -208,8 +208,8 @@ Authorization: Bearer YOUR_TOKEN
     "auditorNickname": "管理员",
     "auditStatus": 2,
     "auditComment": "涉及未公开的内部信息，请修改后重新提交",
-    "auditTime": "2026-09-02T15:30:00",
-    "createTime": "2026-09-01T10:00:00"
+    "auditTime": "2026-09-02T15:30:00Z",
+    "createTime": "2026-09-01T10:00:00Z"
   }
 }
 ```
@@ -228,7 +228,7 @@ Authorization: Bearer YOUR_TOKEN
     "auditStatus": 0,
     "auditComment": null,
     "auditTime": null,
-    "createTime": "2026-09-01T10:00:00"
+    "createTime": "2026-09-01T10:00:00Z"
   }
 }
 ```
@@ -355,7 +355,7 @@ Authorization: Bearer YOUR_TOKEN
 
 但 `Integer` 不受影响：`auditStatus`、`status`、`wordCount` 仍是**数字**。
 
-`LocalDateTime` 默认序列化为 ISO-8601 字符串（如 `"2026-09-01T10:00:00"`），没有时区后缀。
+`LocalDateTime` 序列化为 UTC ISO-8601 字符串（如 `"2026-09-01T10:00:00Z"`），带 `Z` 后缀。
 
 ### 关于 null 字段
 

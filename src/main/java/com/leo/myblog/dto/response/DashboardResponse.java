@@ -56,8 +56,8 @@ public class DashboardResponse {
     /** 上次认证结果快捷字段 */
     private DashboardLastAuthResult lastAuthResult;
 
-    /** 最后登录时间（ISO8601） */
-    private String lastLoginAt;
+    /** 最后登录时间（ISO8601 UTC） */
+    private LocalDateTime lastLoginAt;
 
     // ==================== 管理员控制台仪表盘内部类 ====================
 
@@ -214,8 +214,8 @@ public class DashboardResponse {
         /** 设备首选加密算法: AES-256-GCM / SM4-GCM */
         private String cipherPref;
 
-        /** 本设备绑定时间（ISO8601） */
-        private String boundAt;
+        /** 本设备绑定时间（ISO8601 UTC） */
+        private LocalDateTime boundAt;
     }
 
     /**
@@ -247,11 +247,11 @@ public class DashboardResponse {
         /** 状态: approved / rejected / expired */
         private String status;
 
-        /** 挑战发起时间（ISO8601） */
-        private String requestedAt;
+        /** 挑战发起时间（ISO8601 UTC） */
+        private LocalDateTime requestedAt;
 
-        /** 用户响应时间（ISO8601，可为 null） */
-        private String respondedAt;
+        /** 用户响应时间（ISO8601 UTC，可为 null） */
+        private LocalDateTime respondedAt;
 
         /** 响应耗时（毫秒） */
         private Long responseTimeMs;
@@ -268,7 +268,7 @@ public class DashboardResponse {
         /** 发起挑战的设备名称 */
         private String deviceName;
 
-        /** 挑战发起时间（ISO8601） */
-        private String requestedAt;
+        /** 挑战发起时间（ISO8601 UTC） */
+        private LocalDateTime requestedAt;
     }
 }

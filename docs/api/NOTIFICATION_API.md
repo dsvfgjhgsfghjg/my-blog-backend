@@ -58,7 +58,7 @@ Authorization: Bearer YOUR_TOKEN
         "content": "《Spring Boot 最佳实践》未通过审核。原因：涉及未公开的内部信息，请修改后重新提交",
         "link": "/admin/articles",
         "isRead": false,
-        "createTime": "2026-09-02T15:30:00"
+        "createTime": "2026-09-02T15:30:00Z"
       },
       {
         "id": "1234567890123456788",
@@ -67,7 +67,7 @@ Authorization: Bearer YOUR_TOKEN
         "content": "你的账号密码已被管理员重置。如果这不是预期的操作，请立即联系管理员。",
         "link": null,
         "isRead": true,
-        "createTime": "2026-09-01T09:12:00"
+        "createTime": "2026-09-01T09:12:00Z"
       }
     ],
     "total": "2",

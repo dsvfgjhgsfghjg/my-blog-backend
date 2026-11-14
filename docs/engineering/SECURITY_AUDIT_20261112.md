@@ -336,10 +336,10 @@ Local verification:
 |---|---|
 | SEC-001 browser-readable refresh token | Fixed: access and refresh credentials use separate HttpOnly cookies |
 | SEC-002 production token exposure | Fixed: production requires Secure cookies and browser responses omit tokens |
-| SEC-003 committed SSH private key | Removed from local and Gitea history; GitHub mirror update remains |
+| SEC-003 committed SSH private key | Fixed: public repositories rebuilt with sanitized history; old SHA returns 404 |
 | SEC-004 vulnerable dependency baseline | Fixed: Spring Boot 3.5.16 plus pinned patched transitive dependencies; OSV gate added |
 | SEC-005 public infrastructure ports | Fixed in `deploy/docker-compose.prod.yml`: only the frontend ports are public |
-| SEC-006 public database dump | Removed from local and Gitea history; GitHub mirror update and data-exposure review remain |
+| SEC-006 public database dump | Fixed: public repositories rebuilt, old SHA returns 404, public history scans clean |
 | SEC-101 wildcard credentialed CORS | Fixed: explicit origin allowlist |
 | SEC-102 Cookie-authenticated CSRF | Fixed: Origin/Referer validation for Cookie-authenticated writes |
 | SEC-103 client-credentials scope gap | Fixed: `client_credentials` is disabled |
@@ -407,26 +407,57 @@ Not completed:
 - Production database, Redis, MinIO, JWT, TOTP, SSH, Runner, and administrator
   credentials have not been rotated.
 
+## Execution Record: 2026-11-14
+
+Completed:
+
+- Force-pushing the sanitized branches removed them from the normal branch
+  namespace, but the old backend commit still served the removed dump by SHA.
+- The owner deleted and recreated both public GitHub repositories, then pushed
+  the sanitized histories into the new repositories.
+- GitHub branch inventory contains only:
+  - backend `main`: `605d28101a96c30f800ba3ed3d8daf2a1e23d8ab`
+  - frontend `main`: `1219eeb5cb9ef7066013f9c5878be13d0ef9c9ab`
+- GitHub contents API checks return HTTP 404 for `sql/myblog_backup.dump` at:
+  - current backend `main`
+  - current backend commit `605d281`
+  - old backend commit `39fb233`
+- Fresh mirror clones from the rebuilt GitHub repositories were scanned in Git
+  mode with Gitleaks:
+  - backend: 62 commits, no leaks
+  - frontend: 222 commits, no leaks
+- Both repositories are public with default branch `main`.
+- Temporary deploy keys were deleted through the GitHub API and the stored
+  GitHub PAT was removed from the local system keyring.
+
+Residual:
+
+- Repository-level settings such as branch protection, webhooks, Actions
+  settings, releases, and secrets were not recreated by deleting the mirrors.
+  Reapply any settings that the public mirrors require.
+
 ## Remaining External Actions
 
 These items cannot be completed by source changes alone:
 
 1. Backups are complete for repositories, database, deployment configuration,
    and current images.
-2. Retry the sanitized GitHub pushes when GitHub Git transport is reachable, then
-   confirm the public refs no longer resolve to old commits.
+2. Public mirror remediation is complete through repository replacement. Reapply
+   any desired GitHub repository settings that did not survive recreation.
 3. Gitea server-side Git GC, archive cleanup, deleted-branch cleanup, old package
    removal, and package cleanup are complete. Continue to expire any external CI
    caches or source archives that are outside the Gitea data directory.
 4. Credential rotation and production deployment are complete. See
    `PRODUCTION_CUTOVER_20261113.md`.
-5. Complete the disclosure assessment for the exposed dump using the aggregate
-   findings above; do not copy the dump back into either repository.
+5. The disclosure assessment is complete; see
+   `docs/engineering/DATA_EXPOSURE_ASSESSMENT_20261113.md`. Do not copy the dump
+   back into either repository.
 6. Backend migrations and both application images are deployed. Continue with
    authenticated browser/App smoke tests when real user credentials are used.
 7. External port verification is complete: PostgreSQL, Redis, MinIO, backend, and
    Gitea HTTP ports are not reachable.
-8. After history rewrite, rerun Gitleaks in `git` mode against every pushed branch.
+8. Gitleaks was rerun against fresh GitHub mirror clones for every public branch;
+   backend and frontend scans report no leaks.
 
 The maintenance procedure and rollback checkpoints are documented in
 `docs/engineering/SECURITY_RELEASE_RUNBOOK_20261113.md`.

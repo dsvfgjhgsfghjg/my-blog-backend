@@ -38,7 +38,7 @@
       "deviceId": "svr_abc123...",
       "deviceName": "Xiaomi 14",
       "cipherPref": "AES-256-GCM",
-      "boundAt": "2026-06-15T10:30:00"
+      "boundAt": "2026-06-15T10:30:00Z"
     },
     "recentHistory": {
       "total": 42,
@@ -48,8 +48,8 @@
           "challengeId": "challenge_uuid_xxx",
           "deviceName": "Xiaomi 14",
           "status": "approved",
-          "requestedAt": "2026-06-20T10:00:00",
-          "respondedAt": "2026-06-20T10:00:05",
+          "requestedAt": "2026-06-20T10:00:00Z",
+          "respondedAt": "2026-06-20T10:00:05Z",
           "responseTimeMs": 5000
         }
       ]
@@ -57,9 +57,9 @@
     "lastAuthResult": {
       "status": "approved",
       "deviceName": "Xiaomi 14",
-      "requestedAt": "2026-06-20T10:00:00"
+      "requestedAt": "2026-06-20T10:00:00Z"
     },
-    "lastLoginAt": "2026-06-20T09:30:00"
+    "lastLoginAt": "2026-06-20T09:30:00Z"
   }
 }
 ```

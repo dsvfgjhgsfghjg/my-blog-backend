@@ -18,4 +18,9 @@ Naming:
 YYYYMMDD-short-kebab-case-title.md
 ```
 
+## Current Handoffs
+
+- `20261114-utc-timestamp-z-parsing.md`: App HTTP timestamp parsing and the UTC
+  `Z` contract.
+
 The App workspace is external and must not be edited from the backend repository.

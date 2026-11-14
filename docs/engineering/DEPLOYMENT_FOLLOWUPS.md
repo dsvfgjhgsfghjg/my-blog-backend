@@ -7,6 +7,27 @@
 - Remind the user to resume the GitHub public-mirror cleanup.
 - Confirm the GitHub push credential is available outside the prompt and is not
   stored in either repository.
+- Create a short-lived GitHub token and store it in the system keyring:
+
+  ```bash
+  scripts/security/store-github-token.sh
+  ```
+
+- Run GitHub Git operations through the askpass wrapper so the token never
+  appears in command arguments or repository files:
+
+  ```bash
+  scripts/security/github-git.sh push \
+    --force-with-lease=refs/heads/main:<observed-sha> \
+    github refs/heads/master:refs/heads/main
+  ```
+
+- Remove the token after the maintenance window:
+
+  ```bash
+  scripts/security/remove-github-token.sh
+  ```
+
 - Force-push the sanitized backend and frontend histories with
   `--force-with-lease`.
 - Verify that the old database dump no longer resolves on the public mirror.

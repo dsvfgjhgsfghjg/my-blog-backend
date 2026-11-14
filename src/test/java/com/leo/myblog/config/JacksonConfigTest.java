@@ -1,5 +1,6 @@
 package com.leo.myblog.config;
 
+import com.leo.myblog.dto.response.DashboardResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,5 +57,35 @@ class JacksonConfigTest {
     @DisplayName("LocalDateTime 为 null 时输出 null，不炸")
     void handlesNullLocalDateTime() throws Exception {
         assertEquals("null", objectMapper.writeValueAsString((LocalDateTime) null));
+    }
+
+    @Test
+    @DisplayName("App Dashboard 的手工时间字段也统一输出 Z 后缀")
+    void serializesDashboardTimestampFieldsAsUtcInstant() throws Exception {
+        LocalDateTime time = LocalDateTime.of(2026, 11, 13, 13, 36, 2);
+        DashboardResponse response = new DashboardResponse();
+        response.setLastLoginAt(time);
+
+        DashboardResponse.DashboardDeviceInfo device = new DashboardResponse.DashboardDeviceInfo();
+        device.setBoundAt(time);
+        response.setDevice(device);
+
+        DashboardResponse.DashboardHistoryRecord record = new DashboardResponse.DashboardHistoryRecord();
+        record.setRequestedAt(time);
+        record.setRespondedAt(time);
+        DashboardResponse.DashboardRecentHistory recentHistory = new DashboardResponse.DashboardRecentHistory();
+        recentHistory.setRecords(java.util.List.of(record));
+        response.setRecentHistory(recentHistory);
+
+        DashboardResponse.DashboardLastAuthResult lastResult = new DashboardResponse.DashboardLastAuthResult();
+        lastResult.setRequestedAt(time);
+        response.setLastAuthResult(lastResult);
+
+        String json = objectMapper.writeValueAsString(response);
+
+        assertTrue(json.contains("\"lastLoginAt\":\"2026-11-13T13:36:02Z\""), json);
+        assertTrue(json.contains("\"boundAt\":\"2026-11-13T13:36:02Z\""), json);
+        assertTrue(json.contains("\"requestedAt\":\"2026-11-13T13:36:02Z\""), json);
+        assertTrue(json.contains("\"respondedAt\":\"2026-11-13T13:36:02Z\""), json);
     }
 }

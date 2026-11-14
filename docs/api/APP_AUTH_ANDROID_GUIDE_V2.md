@@ -156,8 +156,8 @@ Authorization: Bearer <JWT_TOKEN>
         "username": "leoadmin",
         "email": "admin@example.com",
         "avatarUrl": "https://leo-blog.top/avatars/default.png",
-        "boundAt": "2026-06-12T10:30:00",
-        "lastLoginAt": "2026-06-14T08:00:00",
+        "boundAt": "2026-06-12T10:30:00Z",
+        "lastLoginAt": "2026-06-14T08:00:00Z",
         "deviceCount": 2
     }
 }
@@ -213,8 +213,8 @@ Authorization: Bearer <JWT_TOKEN>
                 "deviceId": "ANDROID_abc123_def456",
                 "deviceName": "Pixel 7",
                 "status": "approved",
-                "requestedAt": "2026-06-14T12:00:00",
-                "respondedAt": "2026-06-14T12:00:15"
+                "requestedAt": "2026-06-14T12:00:00Z",
+                "respondedAt": "2026-06-14T12:00:15Z"
             },
             {
                 "id": 2054000000000002002,
@@ -222,8 +222,8 @@ Authorization: Bearer <JWT_TOKEN>
                 "deviceId": "ANDROID_abc123_def456",
                 "deviceName": "Pixel 7",
                 "status": "rejected",
-                "requestedAt": "2026-06-14T11:30:00",
-                "respondedAt": "2026-06-14T11:30:10"
+                "requestedAt": "2026-06-14T11:30:00Z",
+                "respondedAt": "2026-06-14T11:30:10Z"
             }
         ],
         "total": 42,

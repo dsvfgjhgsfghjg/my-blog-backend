@@ -141,7 +141,7 @@
 4. **文档**
    - `docs/**` (组织好的文档)
    - `README.md`
-   - `PROJECT_ORGANIZATION.md`
+   - `docs/engineering/PROJECT_ORGANIZATION.md` (历史整理记录)
 
 5. **脚本**
    - `scripts/**`

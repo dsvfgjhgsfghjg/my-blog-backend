@@ -136,8 +136,8 @@ Authorization: Bearer <token>
     "deviceName": "Pixel 7 Pro",
     "numbers": [42, 88, 7],
     "status": "approved",
-    "requestedAt": "2026-06-19T10:30:00",
-    "respondedAt": "2026-06-19T10:30:25"
+    "requestedAt": "2026-06-19T10:30:00Z",
+    "respondedAt": "2026-06-19T10:30:25Z"
   }
 }
 ```

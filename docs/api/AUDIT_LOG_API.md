@@ -80,7 +80,7 @@ GET /api/system/audit-logs?pageNum=1&pageSize=20&username=admin&operationType=LO
         "responseMessage": "操作成功",
         "success": true,
         "executionTime": 45,
-        "createTime": "2026-05-13T10:30:00"
+        "createTime": "2026-05-13T10:30:00Z"
       }
     ],
     "total": "150",
@@ -140,7 +140,7 @@ GET /api/system/audit-logs/1234567890
     "responseMessage": "操作成功",
     "success": true,
     "executionTime": 120,
-    "createTime": "2026-05-13T10:30:00"
+    "createTime": "2026-05-13T10:30:00Z"
   }
 }
 ```
