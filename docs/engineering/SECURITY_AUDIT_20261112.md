@@ -415,16 +415,16 @@ Completed:
   namespace, but the old backend commit still served the removed dump by SHA.
 - The owner deleted and recreated both public GitHub repositories, then pushed
   the sanitized histories into the new repositories.
-- GitHub branch inventory contains only:
-  - backend `main`: `605d28101a96c30f800ba3ed3d8daf2a1e23d8ab`
+- At verification time, GitHub branch inventory contained only:
+  - backend `main`: `0e5c0792a776c48ba4236be087105ab306c1becb`
   - frontend `main`: `1219eeb5cb9ef7066013f9c5878be13d0ef9c9ab`
 - GitHub contents API checks return HTTP 404 for `sql/myblog_backup.dump` at:
   - current backend `main`
-  - current backend commit `605d281`
+  - backend commit `0e5c079`
   - old backend commit `39fb233`
 - Fresh mirror clones from the rebuilt GitHub repositories were scanned in Git
   mode with Gitleaks:
-  - backend: 62 commits, no leaks
+  - backend: 65 commits, no leaks after the MR #5 mirror sync
   - frontend: 222 commits, no leaks
 - Both repositories are public with default branch `main`.
 - Temporary deploy keys were deleted through the GitHub API and the stored
