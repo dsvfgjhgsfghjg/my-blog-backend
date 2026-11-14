@@ -820,7 +820,7 @@ public class AppAuthService {
                 deviceInfo.setDeviceId(device.getDeviceId());
                 deviceInfo.setDeviceName(device.getDeviceName());
                 deviceInfo.setCipherPref(device.getCipherPref());
-                deviceInfo.setBoundAt(device.getCreatedAt() != null ? device.getCreatedAt().toString() : null);
+                deviceInfo.setBoundAt(device.getCreatedAt());
                 response.setDevice(deviceInfo);
             }
         }
@@ -855,12 +855,12 @@ public class AppAuthService {
             DashboardResponse.DashboardLastAuthResult lastResult = new DashboardResponse.DashboardLastAuthResult();
             lastResult.setStatus(lastHistory.getStatus());
             lastResult.setDeviceName(lastHistory.getDeviceName());
-            lastResult.setRequestedAt(lastHistory.getRequestedAt() != null ? lastHistory.getRequestedAt().toString() : null);
+            lastResult.setRequestedAt(lastHistory.getRequestedAt());
             response.setLastAuthResult(lastResult);
         }
 
         // 5. 最后登录时间
-        response.setLastLoginAt(user.getLastLoginTime() != null ? user.getLastLoginTime().toString() : null);
+        response.setLastLoginAt(user.getLastLoginTime());
 
         return response;
     }
@@ -874,8 +874,8 @@ public class AppAuthService {
         record.setChallengeId(history.getChallengeId());
         record.setDeviceName(history.getDeviceName());
         record.setStatus(history.getStatus());
-        record.setRequestedAt(history.getRequestedAt() != null ? history.getRequestedAt().toString() : null);
-        record.setRespondedAt(history.getRespondedAt() != null ? history.getRespondedAt().toString() : null);
+        record.setRequestedAt(history.getRequestedAt());
+        record.setRespondedAt(history.getRespondedAt());
         if (history.getRequestedAt() != null && history.getRespondedAt() != null) {
             record.setResponseTimeMs(
                     java.time.Duration.between(history.getRequestedAt(), history.getRespondedAt()).toMillis()

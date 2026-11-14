@@ -59,7 +59,7 @@ App 通过加密通道发送以下消息：
     "loginInfo": {
       "currentIp": "unknown",
       "lastLoginIp": "192.168.1.1",
-      "lastLoginTime": "2026-06-19T15:30:00",
+      "lastLoginTime": "2026-06-19T15:30:00Z",
       "loginCount": 42
     },
     "statsCards": {
@@ -79,7 +79,7 @@ App 通过加密通道发送以下消息：
         "trend": "up"
       }
     },
-    "lastUpdateTime": "2026-06-19T14:30:00",
+    "lastUpdateTime": "2026-06-19T14:30:00Z",
     "quickActions": [
       {"action": "new_post", "label": "写文章", "icon": "edit", "route": "/admin/posts/create"},
       {"action": "manage_posts", "label": "文章管理", "icon": "list", "route": "/admin/posts"},
@@ -93,7 +93,7 @@ App 通过加密通道发送以下消息：
         "id": 1,
         "type": "post_publish",
         "content": "发布了新文章《Spring Boot 入门指南》",
-        "time": "2026-06-19T14:00:00",
+        "time": "2026-06-19T14:00:00Z",
         "username": "管理员"
       }
     ]

@@ -277,8 +277,8 @@ Authorization: Bearer <JWT_TOKEN>
             "deviceType": "ANDROID",
             "publicKey": null,
             "cipherPref": "AES-256-GCM",
-            "lastActiveAt": "2026-06-13T12:00:00",
-            "createdAt": "2026-06-12T10:30:00"
+            "lastActiveAt": "2026-06-13T12:00:00Z",
+            "createdAt": "2026-06-12T10:30:00Z"
         }
     ]
 }

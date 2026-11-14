@@ -38,8 +38,8 @@ GET /api/auth/app/devices
       "deviceType": "ANDROID",
       "publicKey": null,
       "cipherPref": "AES-256-GCM",
-      "lastActiveAt": "2026-06-19T10:30:00",
-      "createdAt": "2026-06-18T08:00:00"
+      "lastActiveAt": "2026-06-19T10:30:00Z",
+      "createdAt": "2026-06-18T08:00:00Z"
     }
   ]
 }
@@ -68,7 +68,7 @@ GET /api/auth/app/test-push/devices
         "deviceName": "Pixel 7 Pro",
         "deviceType": "ANDROID",
         "cipherPref": "AES-256-GCM",
-        "lastActiveAt": "2026-06-19T10:30:00",
+        "lastActiveAt": "2026-06-19T10:30:00Z",
         "online": true
       }
     ],
@@ -240,8 +240,8 @@ GET /api/auth/app/history?page=1&size=20&status=approved
         "deviceName": "Pixel 7 Pro",
         "numbers": [42, 88, 7],
         "status": "approved",
-        "requestedAt": "2026-06-19T10:30:00",
-        "respondedAt": "2026-06-19T10:30:25"
+        "requestedAt": "2026-06-19T10:30:00Z",
+        "respondedAt": "2026-06-19T10:30:25Z"
       }
     ],
     "total": 45,

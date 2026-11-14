@@ -37,17 +37,17 @@ GET /api/admin/security/banned-ips
       "id": 2054000000000000111,
       "ipAddress": "192.168.1.100",
       "reason": "登录失败次数过多（23次，阈值20次）",
-      "banUntil": "2026-06-11T22:00:00",
+      "banUntil": "2026-06-11T22:00:00Z",
       "triggerCount": 23,
-      "createTime": "2026-06-10T22:00:00"
+      "createTime": "2026-06-10T22:00:00Z"
     },
     {
       "id": 2054000000000000112,
       "ipAddress": "10.0.0.5",
       "reason": "管理员手动封禁",
-      "banUntil": "2026-06-11T22:30:00",
+      "banUntil": "2026-06-11T22:30:00Z",
       "triggerCount": 0,
-      "createTime": "2026-06-10T22:30:00"
+      "createTime": "2026-06-10T22:30:00Z"
     }
   ]
 }

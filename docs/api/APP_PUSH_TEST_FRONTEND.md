@@ -99,7 +99,7 @@ Authorization: Bearer <JWT_TOKEN>
         "deviceName": "Xiaomi 14",
         "deviceType": "ANDROID",
         "cipherPref": "AES_GCM",
-        "lastActiveAt": "2026-06-15T20:00:00",
+        "lastActiveAt": "2026-06-15T20:00:00Z",
         "online": true
       }
     ],
@@ -164,8 +164,8 @@ Authorization: Bearer <JWT_TOKEN>
     "deviceId": "ANDROID_abc123_def456",
     "deviceName": "Xiaomi 14",
     "status": "approved",
-    "requestedAt": "2026-06-15T20:00:00",
-    "respondedAt": "2026-06-15T20:00:05"
+    "requestedAt": "2026-06-15T20:00:00Z",
+    "respondedAt": "2026-06-15T20:00:05Z"
   }
 }
 ```
