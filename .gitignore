@@ -142,6 +142,9 @@ captcha-images/
 # ============================================
 # Additional sensitive/runtime files
 # ============================================
+gitea-runner-*
+gitea.txt
+gradlealiyun.txt
 secrets_config*.txt
 .runner
 *.runner

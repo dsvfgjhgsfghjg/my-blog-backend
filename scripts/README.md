@@ -21,16 +21,16 @@
 ### [tests/](./tests/) - 测试脚本
 - `test_comment_api.sh` - 评论 API 测试
 - `test_favorite_api.sh` - 收藏功能测试
+- `test_markdown_newline.sh` - Markdown 换行保留测试
+- `test_markdown_storage.sh` - Markdown 存储格式测试
 - `test_particle_preference_api.sh` - 粒子偏好设置测试
 - `test_public_posts_api.sh` - 公开文章 API 测试
 - `test_search.sh` - 搜索功能测试
 
-## 其他文件
-
-- `.gitignore.docker` - Docker 相关的 git 忽略规则
-- `.sdkmanrc` - SDKMAN 配置文件
-- `apifoxtoken.txt` - Apifox 认证令牌（已添加到 .gitignore）
-- `*.tar.gz` - 部署包文件（临时文件）
+### [security/](./security/) - 凭据与安全运维脚本
+- `github-git.sh` - 通过系统密钥环执行 GitHub Git 操作
+- `store-github-token.sh` - 交互式保存 GitHub 写令牌
+- `remove-github-token.sh` - 移除已保存的 GitHub 令牌
 
 ## 使用说明
 
