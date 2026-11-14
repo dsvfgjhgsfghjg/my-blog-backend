@@ -101,6 +101,10 @@ Run `npm run build` and `npm run test:e2e` for frontend changes.
 - Security release runbook: `docs/engineering/SECURITY_RELEASE_RUNBOOK_20261113.md`
 - Deployment follow-ups: `docs/engineering/DEPLOYMENT_FOLLOWUPS.md`
 - Production cutover record: `docs/engineering/PRODUCTION_CUTOVER_20261113.md`
+- Data exposure assessment: `docs/engineering/DATA_EXPOSURE_ASSESSMENT_20261113.md`
+- Historical workspace layout: `docs/engineering/PROJECT_ORGANIZATION.md`
+- Current App timestamp handoff:
+  `docs/app-handoffs/20261114-utc-timestamp-z-parsing.md`
 
 ## 6. Local Search and Vector Store Decision
 
