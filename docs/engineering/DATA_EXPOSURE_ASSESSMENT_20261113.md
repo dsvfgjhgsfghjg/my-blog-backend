@@ -90,10 +90,10 @@ direct notification is not currently feasible from the available evidence.
 - [x] Record the public branch SHAs and scan evidence.
 - [ ] Re-run this assessment if the evidence inventory changes.
 
-Current public SHAs:
+Verified public SHAs after repository reconstruction and the MR #5 mirror sync:
 
 ```text
-backend main    605d28101a96c30f800ba3ed3d8daf2a1e23d8ab
+backend main    0e5c0792a776c48ba4236be087105ab306c1becb
 frontend main   1219eeb5cb9ef7066013f9c5878be13d0ef9c9ab
 ```
 
